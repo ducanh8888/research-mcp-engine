@@ -101,3 +101,23 @@ machine, breaker profiles, health scheduler, replay experimentation, durable dis
 enrichment, coverage analytics). design.md v2 keeps provider abstraction + routing core, moves the rest to a
 Deferred list with triggers. Also: `search`/`fetch` only on `/mcp/compat`; `get_evidence` removed; `SITE_INTERACT`
 deferred (outside the search/retrieve/verify/merge/rank boundary); admin API uses engine vocabulary.
+
+## Pivot: server for local researchers (2026-09-30)
+
+Supersedes the deployment/consumer rows above where they conflict.
+
+| Topic | Decision |
+|---|---|
+| Consumers | Claude Code sessions and agentRT running on **other tailnet machines** (local researchers). ChatGPT/claude.ai dropped |
+| Server | This machine holds all provider OAuth tokens/API keys and runs the engine |
+| Transport | Daemon, MCP Streamable HTTP on port **8765** |
+| Network | **Tailscale** only: `100.66.213.111:8765` (+ `127.0.0.1:8765`). No tunnel, Caddy or public ingress |
+| Client auth | **Bearer token per client**, created/revoked in admin |
+| Providers | Engine calls providers itself (own keys/OAuth), not the claude.ai connectors |
+| Output | Tool results only; engine writes no evidence files for researchers |
+| Skeleton | **research-mcp** as base; from mcp-gateway only upstream OAuth client, token store, crypto, migrations |
+| Admin UI | **sqladmin** + custom actions (test, connect OAuth, reset, replay) |
+| Run | **Docker compose** on this machine |
+| Undermind CIMD | Client-metadata JSON on a small **public repo + GitHub Pages** (main repo stays private) |
+
+design.md v3 reflects this.

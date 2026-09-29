@@ -1,6 +1,7 @@
-# Research Engine — Design (v2)
+# Research Engine — Design (v3)
 
-Status: **draft v2**, 2026-09-30. Replaces v1 (2026-09-29, see git history).
+Status: **draft v3**, 2026-09-30. v3 = v2 re-targeted to a private server for local researchers (Claude Code /
+agentRT on tailnet machines). v1/v2 in git history.
 Inputs: [requirements-notes.md](requirements-notes.md), [research.md](research.md), `research/01…07`.
 Audience: the owner and whoever implements the engine.
 
@@ -24,18 +25,19 @@ errors, merges results and returns compact ranked evidence with provenance. It n
 | # | Decision | § |
 |---|---|---|
 | D1 | Python 3.12, **FastMCP `==4.0.10`** (mcp `>=2.2,<3`), FastAPI outer app, single process, asyncio | 3 |
-| D2 | App shell = fork of `R0Wi/mcp-gateway`; provider layer seeded from `vvzvlad/research-mcp` | 2 |
-| D3 | **One MCP tool per capability (16)** + `get_job` on `/mcp`; ChatGPT `search`/`fetch` only on `/mcp/compat` | 4 |
+| D2 | Skeleton = **`vvzvlad/research-mcp`**; from `R0Wi/mcp-gateway` copy only the upstream OAuth client, encrypted token store, crypto, migrations runner | 2 |
+| D3 | **One MCP tool per capability (16) + `get_job`** on `/mcp` (Streamable HTTP). No compat surface | 4 |
 | D4 | Routing = per capability: `fanout` or `sequential` over an ordered provider list; accounts tried in priority order | 6 |
 | D5 | Account availability = 3 independent fields (credential, cooldown, blocked capabilities); no global severity | 7 |
 | D6 | Errors classified **inside each adapter** into one small typed error set | 7.3 |
 | D7 | Merge = normalize → canonical ID/URL → exact-key dedup → **plain RRF (k=60)**; optional rerank replaces order of top-N | 8 |
 | D8 | Deadline per call → **partial result**, not a job. Jobs only for inherently async capabilities | 9 |
-| D9 | SQLite (WAL), plain repositories; query + document cache with TTL | 10, 11 |
-| D10 | Config: bootstrap YAML for server/auth only; providers/accounts/routing live in DB, edited in admin | 12 |
-| D11 | Admin: accounts + OAuth connect, status/quota, request log + replay, routing editor — own API vocabulary | 13 |
-| D12 | Existing host, existing Cloudflare tunnel + Caddy, hostname `research.ducanh.cloud` | 15 |
-| D13 | No engine-enforced ToS restrictions; ToS is the owner's call (requirements, 2026-09-29) | 14 |
+| D9 | SQLite (WAL); query + document cache with TTL | 10, 11 |
+| D10 | Config: bootstrap YAML for server only; providers/accounts/routing/client tokens live in DB, edited in admin | 12 |
+| D11 | Admin web UI = **sqladmin** views + custom actions (test, connect OAuth, reset, replay) | 13 |
+| D12 | This machine is the **server** holding provider credentials; clients on other machines connect over **Tailscale** to `100.66.213.111:8765`; **per-client bearer tokens**; Docker compose | 15 |
+| D13 | Undermind CIMD client document hosted on a small **public repo + GitHub Pages** | 5.2 |
+| D14 | No engine-enforced ToS restrictions; ToS is the owner's call | 14 |
 
 Non-goals: hypothesis generation, research prioritization, knowledge admission, campaign opening, scientific
 decisions, final source acceptance, **evidence interpretation or preference ranking**. No LLM in the engine.
@@ -45,59 +47,59 @@ decisions, final source acceptance, **evidence interpretation or preference rank
 ## 1. Architecture
 
 ```
-ChatGPT · claude.ai · Claude Code · agentRT
-        │ HTTPS  research.ducanh.cloud  (existing cloudflared → Caddy)
+tailnet machines: Claude Code sessions · agentRT            (researchers run locally)
+        │  HTTP  100.66.213.111:8765/mcp   Authorization: Bearer <client token>
         ▼
-research-engine (one process)
- ├─ /mcp  /mcp/compat         FastMCP 4, both protocol eras, OAuth 2.1 AS (mcp-gateway) or personal token
- ├─ /oauth/*                  upstream OAuth connect + CIMD client document
- ├─ /admin/api/* + /admin/    admin API + SPA
+server (this machine) — research-engine container (one process)
+ ├─ /mcp                   FastMCP 4 Streamable HTTP, both protocol eras, bearer-token auth
+ ├─ /admin                 sqladmin UI (login) + custom actions
+ ├─ /oauth/callback        upstream OAuth connect (admin's browser)
  ├─ tools ─► router: routing entry → accounts → execute (fanout | sequential) with deadline
  │            providers: http | mcp_oauth | local adapters (each classifies its own errors)
  │            merge: normalize → canonicalize → dedup → RRF → [rerank]
- │            jobs: async capabilities only
- │            cache: query, document
+ │            jobs: async capabilities only       cache: query, document
  └─ storage: SQLite (WAL) + blobs/, secrets Fernet-encrypted
-        │
+        │  outbound internet
  REST: Exa · Firecrawl · Tavily · Brave/Serper · Jina Reader · GitHub · OpenAlex · Crossref · S2 · arXiv · Scite REST
  MCP+OAuth: Undermind · Scite · Elicit · Consensus (REST key preferred)
+
+ public (GitHub Pages, separate public repo): client-metadata.json  ← fetched by Undermind's AS (CIMD)
 ```
+
+No inbound public exposure: no Cloudflare tunnel, no Caddy, no OAuth authorization server for clients.
 
 ---
 
 ## 2. Repository layout and provenance
 
 ```
-research-engine/
-├─ pyproject.toml  config.example.yaml  docker-compose.yml  THIRD_PARTY_NOTICES.md
+research-mcp-engine/                     (private)
+├─ pyproject.toml  config.example.yaml  docker-compose.yml  .env.example  THIRD_PARTY_NOTICES.md
 ├─ src/research_engine/
-│  ├─ server/        app.py, mcp_server.py, tools.py, schemas.py, instructions.md
-│  ├─ auth/          oauth_server.py, users.py, ratelimit.py, web.py, tokens.py (personal tokens)
-│  ├─ providers/     base.py, registry.py, errors.py, http.py, url_guard.py, pdf.py,
-│  │                 web/*.py, scholar/*.py, dev/*.py, mcp/{client,oauth,token_store}.py + per-provider modules
-│  ├─ router/        routing.py, execute.py, accounts.py
-│  ├─ merge/         normalize.py, canonical.py, dedup.py, fusion.py, rerank.py
-│  ├─ jobs/          runner.py
-│  ├─ cache.py
-│  ├─ storage/       db.py, crypto.py, blobs.py, repos.py, migrations/
-│  ├─ admin/         api.py
-│  ├─ config.py  cli.py
-├─ ui-auth/          Svelte login/consent (mcp-gateway)
-├─ ui-admin/         React SPA built from 9router components
+│  ├─ server/     app.py (FastAPI + FastMCP mount + sqladmin), tools.py, schemas.py, auth.py (bearer tokens), instructions.md
+│  ├─ providers/  base.py, registry.py, errors.py, http.py, url_guard.py, pdf.py,
+│  │              web/*.py, scholar/*.py, dev/*.py, mcp/{client,oauth,token_store}.py + per-provider modules
+│  ├─ router/     routing.py, execute.py, accounts.py
+│  ├─ merge/      normalize.py, canonical.py, dedup.py, fusion.py, rerank.py
+│  ├─ jobs/       runner.py
+│  ├─ admin/      views.py (sqladmin ModelViews + actions), oauth_connect.py
+│  ├─ storage/    db.py (SQLAlchemy models), crypto.py, blobs.py, migrations/
+│  ├─ cache.py  config.py  cli.py
 └─ tests/
-```
 
-Module names follow the agreed repo boundary where they carry real code; `normalization/canonicalization/dedup/
-fusion/reranking` are one `merge/` package until any of them grows enough to split. `health/` is not a package:
-availability is three fields on the account (§7).
+research-engine-client/                  (public, GitHub Pages)
+└─ client-metadata.json                  CIMD document for upstream OAuth (no secrets)
+```
 
 | Our module | Seeded from | Mode |
 |---|---|---|
-| `server/app.py`, `auth/*`, `storage/crypto.py`, migrations 0001–0002, `config.py`, `cli.py`, `ui-auth/` | mcp-gateway @59c1efd | copy + modify |
-| `providers/mcp/*` | mcp-gateway `upstream.py` | copy, key by account, fix OAuth lock (§5.4) |
-| `providers/http.py`, `url_guard.py`, `pdf.py`, web adapters, read cascade | research-mcp @11f297d | copy + modify |
-| `ui-admin/` components (tables, modals, OAuth modal, cooldown timer, log detail) | 9router @f01fb90 (+ a few OmniRoute components) | copy, rebind to our API |
-| query-operator parsing | mcp-omnisearch | port (only if P1 needs it) |
+| server skeleton, `providers/http.py`, `url_guard.py`, `pdf.py`, web adapters, read cascade, settings/config errors, tests | research-mcp @11f297d | copy + modify (becomes the base) |
+| `providers/mcp/{client,oauth,token_store}.py`, `storage/crypto.py`, migrations runner | mcp-gateway @59c1efd (`upstream.py`, `storage.py`, `db_migrations.py`) | copy, key by account, fix OAuth lock (§5.4) |
+| `admin/views.py` | sqladmin (BSD-3) | dependency |
+| query-operator parsing | mcp-omnisearch | port (only if needed) |
+
+Not taken from mcp-gateway: OAuth authorization server, DCR/CIMD server side, login/consent UI, proxy/mount aggregation.
+Not taken from 9router/OmniRoute: UI (sqladmin instead); only small algorithms already reflected in §7.
 
 ---
 
@@ -105,8 +107,8 @@ availability is three fields on the account (§7).
 
 - FastMCP 4.0.10 pinned exactly; bump only with the e2e suite (inherited from mcp-gateway) green.
 - One uvicorn worker. Provider I/O async; CPU work (PDF parse) in `anyio.to_thread`.
-- FastMCP ASGI mounted catch-all inside FastAPI (as mcp-gateway). `json_response` off: SSE keepalive every 15 s keeps
-  Cloudflare from 524ing.
+- FastAPI outer app: FastMCP ASGI mounted at `/mcp`, sqladmin at `/admin`, OAuth callback at `/oauth/callback`.
+- Listen on `0.0.0.0:8765` inside the container; compose publishes it only on `127.0.0.1` and the tailnet IP.
 - Not used: FastMCP proxy/mount/transforms, `fastmcp-tasks`.
 
 ---
@@ -115,6 +117,7 @@ availability is three fields on the account (§7).
 
 ### 4.1 `/mcp` — native tools
 
+Consumers: Claude Code (tool search loads definitions on demand; results ≤ 25k tokens, warning at 10k) and agentRT.
 All tools: `title`, `readOnlyHint: true`, `openWorldHint: true`, `outputSchema` + `structuredContent` + one compact text
 block; descriptions state when to use the tool and its limits (first ~2,000 chars).
 
@@ -144,17 +147,7 @@ There is no separate "expand handle" tool: reads go through `web_read`/`paper_re
 
 The engine does **not** re-classify requests: the consumer chose the capability by choosing the tool.
 
-### 4.2 `/mcp/compat` — ChatGPT/OpenAI deep-research schema
-
-Two tools only, same backend, different representation:
-- `search(query)` → runs the routing entry `compat_search` (a normal provider list, default = the `web_search` and
-  `paper_search` providers in one fanout) → `{results: [{id: handle, title, url}]}`.
-- `fetch(id)` → read by handle (paper handle → `paper_read`, otherwise `web_read`) → `{id, title, text, url, metadata}`.
-
-No classifier, no special routing logic. ChatGPT developer mode uses `/mcp`; OpenAI API deep research and company
-knowledge use `/mcp/compat`. Each path has its own protected-resource metadata.
-
-### 4.3 Output
+### 4.2 Output
 
 ```json
 {
@@ -201,8 +194,11 @@ url, `next_cursor`). Adapters raise `ProviderError` (§7.3).
 - **http**: research-mcp `_http.py` (retry transient errors, never retry 402/429, credit-body markers), extended to
   return status/headers so adapters can classify. Raw HTTP for Firecrawl (SDK drops `creditsUsed`) and Tavily (SDK
   maps 429/432/433 to misleading exceptions); Exa raw HTTP with explicit `contents`.
-- **mcp_oauth**: one FastMCP `Client` per account, `NoForwardStreamableHttpTransport`, CIMD → DCR, tokens encrypted
-  per account.
+- **mcp_oauth**: one FastMCP `Client` per account, tokens encrypted per account. Client registration: DCR where the
+  upstream supports it (Scite, Elicit, Consensus); **CIMD for Undermind** with `client_id` =
+  `https://ducanh8888.github.io/research-engine-client/client-metadata.json`. `redirect_uris` in that document:
+  `http://100.66.213.111:8765/oauth/callback` and `http://127.0.0.1:8765/oauth/callback` (the admin's browser completes
+  the flow on the tailnet). Exact-`state` callback routing from mcp-gateway.
 - **local**: trafilatura, pypdf.
 
 ### 5.3 Provider set v1
@@ -235,7 +231,7 @@ part of availability state (§7).
 
 ### 6.1 Routing entry
 
-One entry per capability (and `compat_search`), stored in DB, edited in admin:
+One entry per capability, stored in DB, edited in admin:
 
 ```yaml
 paper_search:  {mode: fanout,     providers: [openalex, s2, undermind, consensus, scite, elicit]}
@@ -454,31 +450,26 @@ Migrations are added per phase, only for tables that phase uses (§17).
 
 ## 12. Configuration
 
-- `config.yaml`: server (`public_url`, trusted proxy), auth (users, token TTLs, redirect allowlist), storage path,
-  encryption key reference. Nothing else.
-- Providers, accounts, secrets and routing entries live in the DB, edited in admin. First start creates the default
-  routing entries (§6.2). `cli export` / `cli import` exist for backup, not as a second source of truth.
+- `config.yaml`: listen address/port, data dir, encryption key reference, admin user (password hash). Nothing else.
+- Providers, accounts, secrets, routing entries and client tokens live in the DB, edited in the admin UI. First start
+  creates the default routing entries (§6.2). `cli export` / `cli import` are for backup only.
 
 ---
 
 ## 13. Admin
 
-API (`/admin/api`, session cookie + CSRF), in engine vocabulary:
+**sqladmin** mounted at `/admin` (session login with the single admin user from config), reachable only on the tailnet:
 
-| Area | Endpoints |
-|---|---|
-| Providers & accounts | `GET providers`, `PATCH providers/:name`, `GET/POST accounts`, `PATCH/DELETE accounts/:id`, `POST accounts/:id/test`, `POST accounts/:id/reset` (clear cooldown/blocked) |
-| OAuth | `GET accounts/:id/connect` → upstream authorize URL; callback `/oauth/callback` |
-| Routing | `GET routing`, `PUT routing/:capability` |
-| Requests | `GET requests?…`, `GET requests/:id` (args, attempts, result), `POST requests/:id/replay` |
-| Jobs | `GET jobs`, `GET jobs/:id` |
-| Tokens | `GET/POST/DELETE tokens` (personal tokens for agentRT) |
-| Maintenance | `POST cache/clear`, `GET export`, `POST import` |
+| View | Model | Custom actions |
+|---|---|---|
+| Accounts | `accounts` (+ encrypted secret field, write-only) | **Test** (one cheap call), **Connect OAuth** (redirect to upstream authorize), **Reset** (clear cooldown/blocked) |
+| Providers | `providers` (enabled, option overrides) | — |
+| Routing | `routing` (mode, ordered provider list) | validation on save (provider implements capability) |
+| Client tokens | `client_tokens` (label, hash, created, last used, revoked) | **Create** (shows token once), **Revoke** |
+| Requests | `requests` + inline `attempts` (read-only) | **Replay** (re-run with current config, cache bypass; opens the new request next to the original) |
+| Jobs | `jobs` (read-only) | **Cancel** |
 
-UI pages (built from 9router components rebound to this API): **Accounts** (list per provider, status fields from
-§7.2, quota remaining, test, connect OAuth, reset), **Routing** (ordered provider list + mode per capability),
-**Requests** (log list, detail with attempts, Replay button showing the new result next to the original), **Jobs**.
-Replay = re-run the stored tool arguments with current config and cache bypass.
+Availability fields and latest quota are columns on the Accounts list. No JSON admin API beyond what the actions need.
 
 ---
 
@@ -492,20 +483,21 @@ limiters (§7.4), Firecrawl crawl/map caps in the adapter, upstream tool mapping
 
 ## 15. Deployment
 
-- Current host (56 cores, 125 GB RAM, no GPU), shared with `knowledge-server-infra` and OmniRoute.
-- Own compose project; `engine` container joins the external `web` network; no published host port (optional
-  `127.0.0.1` debug port avoiding 80/3000/8080/20128). CPU/memory limits so it cannot starve RAGFlow/Elasticsearch.
-- Ingress: add `research.ducanh.cloud` to the existing tunnel → Caddy site block
-  `research.ducanh.cloud:80 { reverse_proxy engine:<port> { flush_interval -1 } }` (SSE unbuffered). Changes in
-  `knowledge-server-infra` go through its own process.
-- Cloudflare: no bot/JS challenges or Access on `/mcp*`, `/.well-known/*`, `/authorize`, `/token`, `/register`,
-  `/revoke`, `/oauth/*`; no redirects on the MCP URL; Access on `/admin*`.
-- OAuth AS additions to mcp-gateway: RFC 9207 `iss`, `offline_access`, redirect allowlist (ChatGPT stable + per-connector
-  callbacks, claude.ai/claude.com callbacks, Claude Code loopback), PRM per path (`/mcp`, `/mcp/compat`).
+- Server = this machine (56 cores, 125 GB RAM, no GPU), also running `knowledge-server-infra` and OmniRoute; it holds all
+  provider credentials. Clients are other tailnet machines (`ducanh-1`, `ducanh`, …) running Claude Code / agentRT.
+- Docker compose project `research-engine`: one `engine` service (python:3.12-slim, non-root, volume `/data`),
+  `ports: ["100.66.213.111:8765:8765", "127.0.0.1:8765:8765"]`, restart `unless-stopped`, CPU/memory limits so it cannot
+  starve RAGFlow/Elasticsearch. No dependency on `knowledge-server-infra`.
+- Client auth: `Authorization: Bearer <token>`; tokens created in admin, stored hashed, revocable; `requests` records
+  which token called. Client setup:
+  `claude mcp add --transport http research http://100.66.213.111:8765/mcp --header "Authorization: Bearer <token>"`.
+- Tailnet is the network boundary; bearer tokens identify and revoke clients. Plain HTTP inside the tailnet (WireGuard
+  encrypts transport).
+- `research-engine-client` public repo with GitHub Pages serving `client-metadata.json` (static, no secrets).
 - `/healthz` liveness.
 
-Security: no token passthrough (mcp-gateway assertion); SSRF guard on engine-side fetches with resolved-IP pinning and a
-response-size cap; secrets encrypted and redacted from logs; admin behind login + Cloudflare Access.
+Security: bearer token on `/mcp`; admin login on `/admin`; secrets Fernet-encrypted and redacted from logs; SSRF guard
+on engine-side fetches (resolved-IP pinning, response-size cap).
 
 ---
 
@@ -529,6 +521,8 @@ response-size cap; secrets encrypted and redacted from logs; admin behind login 
 | Coverage analytics (overlap, facets, gaps) | never by default; maybe an offline analysis script |
 | Postgres / multi-process | more than one process or user |
 | Prometheus/Grafana metrics | owner asks for it |
+| Public ingress (tunnel), OAuth authorization server, `/mcp/compat` (`search`/`fetch`) for ChatGPT/claude.ai | a consumer outside the tailnet (claude.ai, ChatGPT, OpenAI deep research) is needed |
+| React admin UI (9router) | sqladmin becomes a real limitation |
 | Perplexity, Parallel, Linkup, crawl4ai, Bright Data, DuckDuckGo adapters | a key is provisioned / a gap in coverage |
 
 ---
@@ -537,11 +531,11 @@ response-size cap; secrets encrypted and redacted from logs; admin behind login 
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **P0 Walking skeleton** | Fork mcp-gateway; FastMCP pin; RFC 9207; `research.ducanh.cloud` via tunnel + Caddy; tables: providers, accounts, account_secrets, routing, requests, attempts; `web_search` (Exa + Brave/Serper) and `web_read` (Firecrawl → Jina → trafilatura) end-to-end with RRF + exact dedup | ChatGPT (dev mode), claude.ai and Claude Code complete OAuth and get merged results; forced 429 on one provider shows failover in `coverage` |
-| **P1 Web + dev** | Remaining web/news/dev providers and tools; limiters; query/doc cache; admin API + minimal Accounts/Requests pages | All web/dev tools work; replay works |
-| **P2 Academic open** | OpenAlex, Crossref, S2, arXiv, Scite REST; ID canonicalization + handles; `paper_*`, `citation_graph`, `citation_verify`, `editorial_check`; `/mcp/compat` | DOI/arXiv dedup across providers on fixtures; compat `search`/`fetch` works with OpenAI's schema |
-| **P3 Hosted MCP + jobs** | Upstream OAuth per account + lock fix; Undermind, Consensus, Scite MCP, Elicit adapters; jobs table + runner; `deep_literature_search`, `systematic_review`, `site_crawl`, `site_map`; Routing page | Undermind deep search completes through `get_job` across a restart |
-| **P4 Rerank (optional)** | Reranker interface; Infinity rerank model (knowledge-server-infra change) + benchmark; enable per capability if it helps | Benchmark recorded; decision documented |
+| **P0 Walking skeleton** | research-mcp as base; FastAPI + FastMCP pin; bearer-token auth; SQLite models (providers, accounts, routing, client_tokens, requests, attempts); `web_search` (Exa + Brave/Serper) and `web_read` (Firecrawl → Jina → trafilatura) with RRF + exact dedup; docker compose on tailnet; minimal sqladmin (accounts, tokens, requests) | Claude Code on another tailnet machine calls both tools and gets merged results; forced 429 on one provider shows failover in `coverage` |
+| **P1 Web + dev** | Remaining web/news/dev providers and tools; limiters; query/doc cache; Replay action; Routing view | All web/dev tools work; replay works |
+| **P2 Academic open** | OpenAlex, Crossref, S2, arXiv, Scite REST; ID canonicalization + handles; `paper_*`, `citation_graph`, `citation_verify`, `editorial_check` | DOI/arXiv dedup across providers on fixtures |
+| **P3 Hosted MCP + jobs** | Upstream OAuth per account (+ lock fix, CIMD public repo); Undermind, Consensus, Scite MCP, Elicit adapters; jobs + runner; `deep_literature_search`, `systematic_review`, `site_crawl`, `site_map`; Connect OAuth action | Undermind deep search completes through `get_job` across a restart |
+| **P4 Rerank (optional)** | Reranker interface; backend choice (Infinity shared cluster, API) + benchmark | Benchmark recorded; decision documented |
 
 ---
 
