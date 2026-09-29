@@ -16,6 +16,13 @@ Audience: whoever implements or reviews the engine. Decisions live in [design.md
 
 ---
 
+> **Read with design v2 (2026-09-30).** Sections 4–6 below, and research/03 and research/07, describe the
+> *available options* found in the sources. Design v2 adopts a minimal subset and lists the rest as deferred with
+> triggers (design §16). In particular, research/03 maps OmniRoute/9router "model" to our "capability" too directly:
+> model calls are largely substitutable, research providers are not (Scite, Firecrawl, Elicit, Undermind do different
+> things), so model-router control-plane machinery (breaker profiles, strategy catalog, policy versioning, spend
+> guards) does not transfer by default.
+
 ## 1. Reuse verdicts
 
 | Source | Verdict | What we take | What we leave |
@@ -103,7 +110,7 @@ Audience: whoever implements or reviews the engine. Decisions live in [design.md
 This table is **informational**. Owner decision (2026-09-29): ToS assessment is the owner's; the engine enforces no
 ToS-derived restrictions (design §19).
 
-## 4. Algorithms (recommended defaults)
+## 4. Algorithms (options; v2 adopts exact-ID/URL dedup + plain RRF)
 
 - **Handles**: deterministic typed IDs, priority `doi > arxiv > pmid > pmcid > openalex > s2 > isbn > gh > url-hash`;
   upgrades keep old handles as permanent aliases; preprint and published = separate evidence, linked and collapsed in
@@ -124,7 +131,7 @@ ToS-derived restrictions (design §19).
   dates, source type, freshness, code stats, versions, and a per-call coverage/gaps report. `unknown ≠ negative`.
   Enrichment runs only on returned top-k, batched and cached.
 
-## 5. Routing/resilience model (from 9router + OmniRoute)
+## 5. Routing/resilience options (from 9router + OmniRoute — v2 adopts only cooldowns + priority failover)
 
 - Three scopes, kept separate: **provider breaker** (CLOSED→DEGRADED→OPEN→HALF_OPEN; trips only on
   408/5xx/transport), **account state** (cooldown with exponential backoff; terminal states never overwritten by

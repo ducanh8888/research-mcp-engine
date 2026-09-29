@@ -14,9 +14,10 @@ campaign opening, scientific decisions, final source acceptance. Not an autonomo
 
 ## Guiding principle: maximize reuse
 
-Build on existing source code wherever possible; custom code only for the research-specific
-core (capability router, account router, provider policies, canonicalization/dedup, fusion,
-signals). Language: **Python** (follows from the core foundation).
+Reuse existing source code wherever it fits a **minimal** design (adapters, HTTP/SSRF/PDF layers, OAuth, storage crypto,
+UI components). Reuse means taking code, not importing a source repo's abstractions or control plane
+(clarified 2026-09-30 after design review). Custom code only for the research-specific core (capability routing,
+account failover, canonicalization/dedup, fusion). Language: **Python**.
 
 ## Source repos
 
@@ -48,7 +49,7 @@ Undermind, Consensus**.
 | Storage | Delegated to design doc. Criteria: fast to ship, few bugs, easy to scale. Leaning: single SQLite (WAL, encrypted secrets, alembic) incl. cache/jobs/handles; storage interfaces allow later Postgres/Redis. |
 | First deliverable | **Research + design doc** (no code yet). Docs in Markdown, English. |
 | Account pool | Multiple keys/plans/accounts per provider; mostly 1 today; model supports N. Used for failover, rotation, cost allocation, plan-gated capabilities. Any number of accounts and any strategy (owner decides ToS). |
-| MCP tool surface | **One tool per capability.** ChatGPT `search`/`fetch` compatibility: **research current ChatGPT requirements first**, decide in design doc. |
+| MCP tool surface | **One tool per capability** on `/mcp` (+ `get_job`). ChatGPT `search`/`fetch` only on `/mcp/compat` (design v2 §4). |
 | Capability classification | Consumer specifies (tool choice); rule/heuristic fallback. No LLM in the engine. |
 | Reranker | Pluggable + toggleable: local cross-encoder or rerank API. Default fusion = RRF. |
 | Long-running jobs | Async jobs (job_id + poll/notify), persisted across restarts. |
@@ -92,3 +93,11 @@ See design.md §22. Summary: no engine-enforced ToS restrictions — owner handl
 Consensus API key, GitHub PAT, OpenAlex, S2; Scite free + public REST; host = current machine (no GPU) shared with
 knowledge-server-infra; ingress via existing tunnel + Caddy on a new hostname; reranker on the shared Infinity;
 monitoring via admin UI only; only Jina keyless kept among optional fallbacks.
+
+## Design review (2026-09-30)
+
+Owner review found v1's control plane larger than the workload (policy language, spend strategy, 3-scope state
+machine, breaker profiles, health scheduler, replay experimentation, durable distributed-style jobs, implicit
+enrichment, coverage analytics). design.md v2 keeps provider abstraction + routing core, moves the rest to a
+Deferred list with triggers. Also: `search`/`fetch` only on `/mcp/compat`; `get_evidence` removed; `SITE_INTERACT`
+deferred (outside the search/retrieve/verify/merge/rank boundary); admin API uses engine vocabulary.
