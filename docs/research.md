@@ -16,22 +16,25 @@ Audience: whoever implements or reviews the engine. Decisions live in [design.md
 
 ---
 
-> **Read with design v2 (2026-09-30).** Sections 4–6 below, and research/03 and research/07, describe the
-> *available options* found in the sources. Design v2 adopts a minimal subset and lists the rest as deferred with
-> triggers (design §16). In particular, research/03 maps OmniRoute/9router "model" to our "capability" too directly:
-> model calls are largely substitutable, research providers are not (Scite, Firecrawl, Elicit, Undermind do different
-> things), so model-router control-plane machinery (breaker profiles, strategy catalog, policy versioning, spend
-> guards) does not transfer by default.
+> **Historical research snapshot, not an implementation checklist (read with design v3, audited 2026-10-02).**
+> Sections 1–7 and research/01–07 include options proposed *before* the local-tailnet pivot. The current decisions
+> are in [design.md](design.md): research-mcp skeleton; from mcp-gateway reuse only upstream OAuth client/token-store,
+> crypto and applicable migration logic, **not** its client-facing OAuth authorization server/schema or `sqlite3`
+> access layer; no public MCP ingress/Cloudflare, React admin, ordinary-call jobs or automatic search enrichment.
+> Sections 4–6 below are alternative algorithms/UI/router patterns, not v3 requirements. In particular,
+> research/03 maps OmniRoute/9router "model" to our "capability" too directly: research providers are not
+> interchangeable, so its control-plane machinery does not transfer by default. Pricing/account status and API
+> observations dated 2026-09-29 need live verification before implementation.
 
 ## 1. Reuse verdicts
 
 | Source | Verdict | What we take | What we leave |
 |---|---|---|---|
-| **`R0Wi/mcp-gateway`** @59c1efd (Py, FastAPI + FastMCP 4; author permission) | **App shell** | Client-facing OAuth 2.1 AS (DCR + CIMD + private_key_jwt + PKCE, hashed rotating tokens), upstream MCP OAuth client (CIMD → DCR fallback, proactive refresh, exact-`state` callback routing), Fernet envelope encryption + key rotation, alembic migrations, YAML config with `${ENV}` expansion, both MCP protocol eras, security middleware, e2e two-server test harness | Proxy/mount aggregation loop (`gateway.py:127-133`), Svelte `Backends` page, per-backend (not per-account) keying |
+| **`R0Wi/mcp-gateway`** @59c1efd (Py, FastAPI + FastMCP 4; author permission) | **Targeted upstream reuse** | Upstream MCP OAuth client (CIMD/DCR, proactive refresh, exact-`state` callback routing), Fernet envelope crypto, applicable migration logic, upstream e2e test patterns | Client-facing OAuth AS and its tables, gateway `sqlite3` storage layer, proxy/mount aggregation, Svelte UI |
 | **`vvzvlad/research-mcp`** @11f297d (Py, MIT; author permission) | **Engine core seed** | `_http.py` (retry, 402/429/credit-body detection), `_url_guard.py` (SSRF), `pdf.py`, `failure_reason.py` (to be typed), `ClientManager`, 20 provider adapters + respx tests (496 tests, 93 % coverage), read-chain algorithm (probe → PDF → cost-gated cascade → best-thin), `search_and_read` waves, Jina reranker validation | `pipeline_config.py` (config in code), 2 fixed provider protocols, first-wins URL dedup, 4 fixed tools, Russian strings, in-memory counters/throttles |
-| **`decolua/9router`** @f01fb90 (JS, MIT) | **Router skeleton + admin UI base** | `accountFallback.js`, `combo.js` (chains, sticky round-robin, `collectPanel` quorum+grace fan-out), `errorConfig.js`, `auth.js` selection/locks; dashboard pages (providers, accounts, OAuth modal, quota, usage, logs, combo editor) — plain-English React, small, little Next coupling | LLM translator/executors, token compression, MITM, bulk token import, proxy pools |
-| **`diegosouzapw/OmniRoute`** @666ea59 (TS, MIT, fork of 9router) | **Hardened pieces** | 4-state provider circuit breaker, error signal lists + retry-hint parsing, terminal account states, per-(account×model) locks with success-decay, `QuotaInfo` windows + reset-aware scoring, Firecrawl/Tavily quota fetchers, search-provider registry + normalized result schema, search cache with request coalescing, decision trace, request-log detail/timeline UI, health/resilience UI | 193-migration schema, next-intl UI, stealth/fingerprint/CAPTCHA/cookie-session/free-proxy/quota-exploit features, provider logos (trademark) |
-| **FastMCP 4.0.10** (Apache-2.0) | **Framework** (pin exactly) | Server, both eras, `OAuthProvider`/CIMD/private_key_jwt (raw SDK lacks server CIMD), middleware (logging, timing, error), upstream `Client` | proxy/mount/transform (we hide upstreams by construction), `fastmcp-tasks` (not durable, modern-era only) |
+| **`decolua/9router`** @f01fb90 (JS, MIT) | **Reference only** | Small priority-failover and error-handling ideas where they fit the simple router | Combo/policy language, React admin, LLM translator/executors, token compression, MITM, bulk token import, proxy pools |
+| **`diegosouzapw/OmniRoute`** @666ea59 (TS, MIT, fork of 9router) | **Reference only** | Provider quota/error examples and normalization patterns | Breaker profiles, strategy catalog, request coalescing, time-series/trace UI, 193-migration schema, next-intl UI, stealth/fingerprint/CAPTCHA/cookie-session/free-proxy/quota-exploit features |
+| **FastMCP 4.0.10** (Apache-2.0) | **Framework** (pin exactly) | MCP server (both eras), upstream `Client`, tool schemas; mount its HTTP ASGI app with lifespan | Server-side `OAuthProvider`/CIMD/private_key_jwt (no client-facing OAuth AS), proxy/mount/transform, `fastmcp-tasks` |
 | `mcp` python-sdk 2.2 (MIT) | Transitive dependency | — | — |
 | `spences10/mcp-omnisearch` (TS) | Reference | Declarative provider registry, `provider:mode` keys, error taxonomy with `retryable`, jittered retry, **search-operator parsing + per-provider translation**, large-result offload | Its orchestration (consumer picks provider; no merge/rerank) |
 | `metatool-ai/metamcp` (TS) | Reference | Functional middleware chain, tool filter enforced on list **and** call, per-client profiles, audit middleware, upstream error tracker, tool-list hash for schema drift | Namespace passthrough |
@@ -43,19 +46,18 @@ Audience: whoever implements or reviews the engine. Decisions live in [design.md
   server-minted handles, Tasks moved to an extension, DCR deprecated in favour of CIMD, RFC 9207 `iss`.
   ChatGPT, claude.ai and Claude Code already speak it; we must serve **both eras**. FastMCP 4 does.
 - **No hosted client supports the Tasks extension.** Long work must use our own `job_id` + `get_job` poll tools.
-- **Effective synchronous ceiling is ~60 s** (ChatGPT hard ~60 s; claude.ai documented 240 s but ~60 s observed;
-  Claude Code 60 s first-byte; Cloudflare 125 s between bytes). Design target: p95 ≤ 25 s, hard server deadline ≈ 45 s,
-  then partial results + `job_id`.
-- **Output limits**: Claude Code warns at 10k tokens and caps at 25k; claude.ai ~150k chars; ChatGPT truncates at an
-  undocumented budget. Compact default ≤ ~8k tokens; paginate reads.
-- **ChatGPT `search`/`fetch`** are no longer required for developer-mode chat, but still required (fixed schema) for
-  OpenAI API deep research and company knowledge. Cheap to add as two adapter tools.
-- **Auth checklist**: CIMD preferred + DCR fallback; `iss` in authorization response (missing in mcp-gateway — small
-  fix); `offline_access`; exact `resource`; redirect allowlist for ChatGPT, claude.ai/claude.com and Claude Code loopback;
-  401 (never 200) with `WWW-Authenticate`; token endpoint < 10 s.
-- **Cloudflare Tunnel**: named tunnel only (quick tunnels buffer SSE); responses buffered unless `text/event-stream`
-  → never enable `json_response`; no Bot Fight Mode / JS challenge / Access on `/mcp`, `/.well-known/*`, OAuth paths;
-  Access may protect `/admin`.
+- **Deadline rationale (historical client survey):** hosted clients had ~60 s ceilings, while Claude Code timeout
+  configuration differs. v3 defaults to 40 s and clamps ordinary calls to 5–50 s; a timeout returns **partial
+  results without a job ID**. Only inherently async capabilities use `get_job`.
+- **Output limits**: Claude Code warns at 10k tokens and caps at 25k; other hosted clients have different budgets.
+  v3 targets compact default ≤ ~8k tokens and paginates reads.
+- **ChatGPT `search`/`fetch`** and client-facing OAuth AS are deferred: v3's clients are Claude Code and agentRT
+  over the tailnet with per-client bearer tokens. The ChatGPT and Cloudflare findings below apply only if public
+  hosted clients become a future requirement.
+- **Upstream OAuth checklist:** Undermind needs CIMD, a public HTTPS metadata document and a provider-accepted
+  **HTTPS callback** accessible to the admin browser on the tailnet; Scite/Elicit support DCR. Preserve exact
+  `state` matching, PKCE and resource binding where supported. This is distinct from client-to-engine auth.
+- **Cloudflare Tunnel notes are historical**; v3 has no tunnel or public `/mcp` ingress.
 - **SDK bug to fix (R1)**: `OAuthClientProvider` holds its lock across the whole upstream request, so parallel calls
   on one OAuth account serialize. Subclass so the lock covers only token init/refresh, keep a per-account refresh mutex.
 
@@ -110,7 +112,7 @@ Audience: whoever implements or reviews the engine. Decisions live in [design.md
 This table is **informational**. Owner decision (2026-09-29): ToS assessment is the owner's; the engine enforces no
 ToS-derived restrictions (design §19).
 
-## 4. Algorithms (options; v2 adopts exact-ID/URL dedup + plain RRF)
+## 4. Algorithms (historical options; v3 adopts non-conflicting exact-ID/URL dedup + plain RRF)
 
 - **Handles**: deterministic typed IDs, priority `doi > arxiv > pmid > pmcid > openalex > s2 > isbn > gh > url-hash`;
   upgrades keep old handles as permanent aliases; preprint and published = separate evidence, linked and collapsed in
@@ -131,7 +133,7 @@ ToS-derived restrictions (design §19).
   dates, source type, freshness, code stats, versions, and a per-call coverage/gaps report. `unknown ≠ negative`.
   Enrichment runs only on returned top-k, batched and cached.
 
-## 5. Routing/resilience options (from 9router + OmniRoute — v2 adopts only cooldowns + priority failover)
+## 5. Routing/resilience options (historical; v3 adopts only cooldowns + priority failover)
 
 - Three scopes, kept separate: **provider breaker** (CLOSED→DEGRADED→OPEN→HALF_OPEN; trips only on
   408/5xx/transport), **account state** (cooldown with exponential backoff; terminal states never overwritten by
@@ -158,13 +160,13 @@ fusion-policy editor — we build those. Estimate ≈ 15–20 person-days + 2–
 
 | # | Risk | Mitigation |
 |---|---|---|
-| 1 | Elicit API terms vs "research engine" | Owner decision before buying Pro; if used, TTL-cache only, no corpus |
-| 2 | Hosted-MCP quotas are tiny (Scite 25/mo, Consensus 30/mo) | Treat as budgeted premium providers; free REST sources do the bulk; reserve policy |
-| 3 | Host timeouts (~60 s) vs deep work | Deadline-bounded calls + job handoff; idempotent job IDs |
+| 1 | Elicit API terms vs "research engine" | Inform the owner; they assess ToS. No ToS-derived engine restriction (§14 of design) |
+| 2 | Hosted-MCP quota snapshots are small and date-sensitive | Configure technical limits and verify current quotas when provisioning; open REST sources cover common requests |
+| 3 | Ordinary call deadlines vs inherently async work | Partial ordinary results without jobs; persisted jobs only for inherently async capabilities |
 | 4 | SDK OAuth lock serializes per-account calls | Subclass fix + concurrency test before enabling parallel OAuth upstreams |
 | 5 | FastMCP churn + semi-private APIs | Exact pin, e2e suite (from mcp-gateway) on every bump |
 | 6 | Upstream schema drift of hidden MCP tools | Tool-list hash per account in health; alert |
 | 7 | Adapter rot (2026 breaking changes; 3 unverified research-mcp adapters) | Live smoke test per provider behind an opt-in flag |
-| 8 | SQLite contention (cache/jobs/log volume) | WAL, busy_timeout, async driver, blobs on disk, repository interfaces for a Postgres path |
-| 9 | Home machine downtime breaks CIMD refetch by upstream ASes | Refresh tokens keep working; document; health alert |
-| 10 | UI extraction effort (15–25 d) | Phase it after the engine; mcp-gateway Svelte page as interim |
+| 8 | SQLite contention (cache/jobs/log volume) | WAL, busy_timeout, short SQLAlchemy transactions, blobs on disk; optimize only if observed |
+| 9 | Undermind CIMD and callback availability | Public static metadata document; live-test provider acceptance of a tailnet HTTPS callback |
+| 10 | Admin UI scope grows past workload | Start with sqladmin; add a custom UI only if it becomes a real limitation |

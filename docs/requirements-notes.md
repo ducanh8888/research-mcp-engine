@@ -1,7 +1,8 @@
 # Research Engine — Requirements Notes
 
-Status: clarification rounds 1–7 done. Research + design delivered: see research.md and design.md.
-Last updated: 2026-09-29
+Status: clarification rounds 1–7 recorded; the **2026-09-30 pivot** below and [design.md](design.md) v3 are the
+current implementation decisions. Earlier decision tables and research tasks are historical where they conflict.
+Last updated: 2026-10-02
 
 ## Positioning
 
@@ -21,6 +22,9 @@ account failover, canonicalization/dedup, fusion). Language: **Python**.
 
 ## Source repos
 
+This is the original research inventory, **not** a mandate to copy every listed component. Current reuse decisions
+are in [design.md §2](design.md#2-repository-layout-and-provenance).
+
 | Tier | Repo | Lang / License | Role | Reuse mode |
 |---|---|---|---|---|
 | Core | `modelcontextprotocol/python-sdk` | Py / MIT | MCP server/client, Streamable HTTP, OAuth primitives | Dependency |
@@ -38,7 +42,10 @@ account failover, canonicalization/dedup, fusion). Language: **Python**.
 Hosted MCP providers (no fork, connect directly via MCP client + OAuth): **Scite, Elicit,
 Undermind, Consensus**.
 
-## Decisions
+## Original decisions (historical where superseded)
+
+The 2026-09-30 pivot and current design supersede rows below about public ingress, client OAuth, gateway-as-shell,
+SPA, heuristic classification, implicit enrichment and routing/control-plane strategies.
 
 | Topic | Decision |
 |---|---|
@@ -59,6 +66,9 @@ Undermind, Consensus**.
 | Router logic from OmniRoute/9router | Port: combo/fallback chains, quota/usage tracking, circuit breaker/cooldown. **Plus inventory any other reusable logic** during research. |
 
 ## Usage pattern
+
+The call pattern remains relevant; the older automatic rerank/enrichment and `get` language below were proposals,
+not v3 behavior (see [design.md §4](design.md#4-mcp-surface) and [§8](design.md#8-merge)).
 
 - A working session = **many small calls**, not one big deep call.
 - Normal call: **quality over latency, 10–30 s acceptable** → wide fan-out, wait, fuse, rerank, enrich.
@@ -89,22 +99,24 @@ full per-item provenance. Open: definitions, source per signal, effect on rankin
 
 ## Owner decisions after design review (2026-09-29)
 
-See design.md §22. Summary: no engine-enforced ToS restrictions — owner handles ToS (design §19); Elicit enabled; v1 keys = Exa, Firecrawl, Tavily, Brave/Serper,
-Consensus API key, GitHub PAT, OpenAlex, S2; Scite free + public REST; host = current machine (no GPU) shared with
-knowledge-server-infra; ingress via existing tunnel + Caddy on a new hostname; reranker on the shared Infinity;
-monitoring via admin UI only; only Jina keyless kept among optional fallbacks.
+Historical v1 decisions, superseded where different by the pivot below and current
+[design.md](design.md): no engine-enforced ToS restrictions (current §14); candidate provider keys were Exa,
+Firecrawl, Tavily, Brave/Serper, Consensus API key, GitHub PAT, OpenAlex and S2; Scite REST and Jina keyless were
+also considered. The earlier tunnel/Caddy ingress and shared Infinity reranker are **not** v3 requirements.
 
 ## Design review (2026-09-30)
 
 Owner review found v1's control plane larger than the workload (policy language, spend strategy, 3-scope state
 machine, breaker profiles, health scheduler, replay experimentation, durable distributed-style jobs, implicit
-enrichment, coverage analytics). design.md v2 keeps provider abstraction + routing core, moves the rest to a
-Deferred list with triggers. Also: `search`/`fetch` only on `/mcp/compat`; `get_evidence` removed; `SITE_INTERACT`
-deferred (outside the search/retrieve/verify/merge/rank boundary); admin API uses engine vocabulary.
+enrichment, coverage analytics). The current design keeps provider abstraction and routing core, moves the rest to
+[Deferred](design.md#16-deferred-add-when-the-trigger-is-observed). `get_evidence` was removed and `SITE_INTERACT`
+deferred; `/mcp/compat` was subsequently deferred by the local-researcher pivot.
 
 ## Pivot: server for local researchers (2026-09-30)
 
-Supersedes the deployment/consumer rows above where they conflict.
+Supersedes **all** earlier implementation choices above where they conflict; [design.md](design.md) v3 is the
+source of truth for routing, output, storage, deployment and phase exit criteria. The 2026-10-02 audit clarified
+bootstrap, typed outputs and an HTTPS-only upstream OAuth callback without adding router/control-plane machinery.
 
 | Topic | Decision |
 |---|---|
@@ -118,6 +130,8 @@ Supersedes the deployment/consumer rows above where they conflict.
 | Skeleton | **research-mcp** as base; from mcp-gateway only upstream OAuth client, token store, crypto, migrations |
 | Admin UI | **sqladmin** + custom actions (test, connect OAuth, reset, replay) |
 | Run | **Docker compose** on this machine |
-| Undermind CIMD | Client-metadata JSON on a small **public repo + GitHub Pages** (main repo stays private) |
+| Undermind CIMD | Client-metadata JSON on a small **public repo + GitHub Pages** (main repo stays private); the actual OAuth callback requires a tailnet-reachable **HTTPS** hostname and live upstream acceptance test |
+| Storage/admin | SQLite WAL via SQLAlchemy mapped models/sessions for sqladmin; reuse upstream OAuth client and crypto, not gateway client-facing OAuth AS or its legacy tables |
+| Jobs | Only inherently async capabilities, with ordered start failover and persisted upstream ref; ordinary deadline returns partial results, not a job |
 
-design.md v3 reflects this.
+design.md v3 reflects this. No public `/mcp`/`/admin` ingress is implied by the public CIMD document.
