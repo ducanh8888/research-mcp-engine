@@ -629,6 +629,27 @@ engine-side fetches (resolved-IP pinning, response-size cap).
 | **P3 Hosted MCP + jobs** | Upstream OAuth per account (+ lock fix, CIMD public repo and tailnet HTTPS callback); Undermind, Consensus, Scite MCP, Elicit adapters; sequential job start + runner; `deep_literature_search`, `systematic_review`, Firecrawl `site_crawl`, `site_map`; Connect OAuth action | Live Undermind CIMD OAuth accepts the exact HTTPS redirect; deep search completes through `get_job` across restart, with failed/cancelled statuses tested. Elicit-dependent tools require an eligible account; report plan blocking explicitly if unavailable |
 | **P4 Rerank (optional)** | Reranker interface; backend choice (Infinity shared cluster, API) + benchmark | Benchmark recorded; decision documented |
 
+### 17.1 Definition of done
+
+**First usable target: P0.** Finish the walking skeleton before adding more capabilities.
+**v1 target: P0–P3.** P4 reranking and §16 deferred items do not block either target.
+
+A phase is done when:
+
+- [ ] Its scope is implemented and its exit criteria in the table above pass.
+- [ ] A fresh checkout starts using documented configuration and Docker Compose commands; the phase's
+  provider accounts, routing, and client tokens can be managed through sqladmin.
+- [ ] A researcher on another tailnet machine can discover and call the phase's tools with a valid token
+  and receive the documented output with provenance.
+- [ ] Focused tests exercise the phase's authentication, failover, partial-result, deduplication, and persistence
+  behavior. Handle reads survive restart; cache rules and job recovery are checked when those features are added.
+- [ ] The implementing PR records validation commands and outcomes, separating fixture tests from live
+  client/provider checks. Unavailable agentRT, eligible-account, or OAuth checks remain explicitly pending;
+  required pending criteria prevent claiming the phase or v1 complete.
+
+Implement one phase at a time, reuse compatible upstream code, and add abstractions only for a demonstrated
+requirement. Keep §16 additions tied to their stated triggers.
+
 ---
 
 ## 18. Credits (for README)
