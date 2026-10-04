@@ -1,0 +1,13 @@
+{% extends "builtin/sqladmin/base.html" %}
+{% block body %}
+<div class="page page-center"><div class="container-tight py-4"><div class="card card-md"><div class="card-body">
+  <h1 class="h2 text-center mb-4">Research Engine administration</h1>
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  <form action="{{ url_for('admin:login') }}" method="post" autocomplete="on">
+    <input type="hidden" name="csrf_token" value="{{ request.session.csrf_token }}">
+    <div class="mb-3"><label class="form-label" for="username">Username</label><input class="form-control" id="username" name="username" autocomplete="username" required autofocus></div>
+    <div class="mb-3"><label class="form-label" for="password">Password</label><input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required></div>
+    <button class="btn btn-primary w-100" type="submit">Log in</button>
+  </form>
+</div></div></div></div>
+{% endblock %}

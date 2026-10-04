@@ -2,3 +2,20 @@
 .env
 .env.*
 !.env.example
+
+# Local runtime state and development tools
+config.yaml
+data/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+dist/
+build/
+.local/
+playwright-report/
+test-results/

@@ -1,0 +1,55 @@
+"""Only explicitly implemented capabilities are routed; hidden MCP tools stay hidden."""
+
+from __future__ import annotations
+
+import importlib
+
+from research_engine.providers.base import ASYNC_CAPABILITIES, Capability, Provider
+
+
+def build_registry() -> dict[str, Provider]:
+    registry: dict[str, Provider] = {}
+    for suffix in ("web", "dev", "scholar", "mcp.adapters"):
+        name = f"research_engine.providers.{suffix}"
+        try:
+            module = importlib.import_module(name)
+        except ModuleNotFoundError as exc:
+            if exc.name != name:
+                raise
+            continue
+        for entry in getattr(module, "PROVIDERS", []):
+            provider = entry() if isinstance(entry, type) else entry
+            if provider.name in registry:
+                raise ValueError(f"Duplicate provider name: {provider.name}")
+            registry[provider.name] = provider
+    return registry
+
+
+ORDER = {
+    "web_search": ["exa", "brave", "serper", "tavily", "firecrawl", "duckduckgo"],
+    "news_search": ["brave", "serper", "tavily", "firecrawl"],
+    "web_read": ["firecrawl", "jina", "trafilatura"],
+    "site_map": ["firecrawl"], "site_crawl": ["firecrawl"],
+    "paper_search": ["openalex", "crossref", "semantic_scholar", "arxiv", "consensus_api"],
+    "paper_read": ["openalex", "semantic_scholar", "arxiv", "elicit_api"],
+    "paper_metadata": ["crossref", "openalex", "semantic_scholar", "arxiv", "scite_rest"],
+    "paper_related": ["semantic_scholar", "openalex"],
+    "citation_verify": ["crossref", "openalex", "semantic_scholar", "scite_rest", "scite_mcp"],
+    "citation_graph": ["openalex", "semantic_scholar"],
+    "editorial_check": ["crossref", "openalex", "semantic_scholar", "scite_rest"],
+    "deep_literature_search": ["undermind", "elicit_mcp"],
+    "systematic_review": ["elicit_api", "elicit_mcp"],
+    "developer_search": ["firecrawl", "exa", "github"], "repo_search": ["github"],
+}
+SEQUENTIAL = {Capability.WEB_READ, Capability.PAPER_READ, Capability.PAPER_METADATA, *ASYNC_CAPABILITIES}
+
+
+def default_routes(registry: dict[str, Provider]) -> dict[str, dict]:
+    routes = {}
+    for cap in Capability:
+        compatible = [name for name, provider in registry.items() if cap in provider.capabilities]
+        ordered = [name for name in ORDER.get(cap.value, []) if name in compatible]
+        ordered.extend(name for name in compatible if name not in ordered)
+        if ordered:
+            routes[cap.value] = {"mode": "sequential" if cap in SEQUENTIAL else "fanout", "providers": ordered}
+    return routes

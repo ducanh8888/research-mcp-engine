@@ -1,0 +1,38 @@
+{% extends "builtin/sqladmin/layout.html" %}
+{% block head %}
+{{ super() }}
+<meta name="csrf-token" content="{{ request.session.csrf_token }}">
+{% endblock %}
+{% block tail %}
+{{ super() }}
+<script>
+(() => {
+  const token = {{ request.session.csrf_token | tojson }};
+  for (const form of document.forms) {
+    if (form.method.toUpperCase() !== 'GET' && !form.querySelector('[name="csrf_token"]')) {
+      const field = document.createElement('input');
+      field.type = 'hidden'; field.name = 'csrf_token'; field.value = token;
+      form.append(field);
+    }
+  }
+  const originalFetch = window.fetch;
+  window.fetch = (input, init = {}) => {
+    const target = new URL(input instanceof Request ? input.url : input, location.href);
+    const method = (init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (target.origin === location.origin && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      init.headers = new Headers(init.headers || (input instanceof Request ? input.headers : {}));
+      init.headers.set('X-CSRF-Token', token);
+    }
+    return originalFetch(input, init);
+  };
+  if (window.jQuery) {
+    jQuery(document).ajaxSend((event, xhr, settings) => {
+      const target = new URL(settings.url, location.href);
+      if (target.origin === location.origin && !['GET', 'HEAD', 'OPTIONS'].includes(settings.type.toUpperCase())) {
+        xhr.setRequestHeader('X-CSRF-Token', token);
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

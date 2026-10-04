@@ -1,0 +1,297 @@
+{
+  "kind": "authored-smoke-set",
+  "measured_at": "2026-10-03T21:47:45.735925+00:00",
+  "backend": "fastembed",
+  "model": "Xenova/ms-marco-MiniLM-L-6-v2",
+  "threads": 2,
+  "python": "3.12.3",
+  "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+  "fastembed_version": "0.8.1",
+  "query_count": 8,
+  "documents_per_query": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "warm_repetitions": 3,
+  "cold_start_ms": 5629.183,
+  "warm_latency_ms_p50": 60.065,
+  "warm_latency_ms_p95": 85.13,
+  "mean_ndcg_at_5_baseline": 0.6528514795458245,
+  "mean_ndcg_at_5_reranked": 0.9651443012297997,
+  "mean_mrr_baseline": 0.3333333333333333,
+  "mean_mrr_reranked": 1.0,
+  "mean_overlap_at_3": 0.4583333333333333,
+  "limitations": "Eight authored cases, six documents each, ordinal manual labels, no live provider candidates. Does not establish production relevance or justify enabling reranking by default.",
+  "cases": [
+    {
+      "id": "continual-learning",
+      "query": "Which techniques prevent catastrophic forgetting during continual learning in neural networks?",
+      "baseline": [
+        "gc",
+        "dropout",
+        "ewc",
+        "replay",
+        "erasure",
+        "si"
+      ],
+      "reranked": [
+        "replay",
+        "ewc",
+        "dropout",
+        "si",
+        "gc",
+        "erasure"
+      ],
+      "labels": {
+        "gc": 0,
+        "dropout": 1,
+        "ewc": 2,
+        "replay": 2,
+        "erasure": 0,
+        "si": 2
+      },
+      "ndcg_at_5_baseline": 0.5016452809607169,
+      "ndcg_at_5_reranked": 0.9796808707575757,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.6666666666666666
+    },
+    {
+      "id": "private-mcp",
+      "query": "How can an MCP server keep bearer tokens safe when exposed only on a Tailscale network?",
+      "baseline": [
+        "dns",
+        "oauth",
+        "token",
+        "origin",
+        "secret",
+        "proxy"
+      ],
+      "reranked": [
+        "token",
+        "secret",
+        "origin",
+        "dns",
+        "proxy",
+        "oauth"
+      ],
+      "labels": {
+        "dns": 1,
+        "oauth": 0,
+        "token": 2,
+        "origin": 2,
+        "secret": 2,
+        "proxy": 0
+      },
+      "ndcg_at_5_baseline": 0.7258170887714164,
+      "ndcg_at_5_reranked": 1.0,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.3333333333333333
+    },
+    {
+      "id": "paper-versions",
+      "query": "Why do preprints and published journal articles need separate identifiers during paper search?",
+      "baseline": [
+        "template",
+        "trackers",
+        "distinct",
+        "relations",
+        "peer",
+        "issue"
+      ],
+      "reranked": [
+        "peer",
+        "relations",
+        "distinct",
+        "template",
+        "issue",
+        "trackers"
+      ],
+      "labels": {
+        "template": 0,
+        "trackers": 1,
+        "distinct": 2,
+        "relations": 2,
+        "peer": 2,
+        "issue": 0
+      },
+      "ndcg_at_5_baseline": 0.6717287037439216,
+      "ndcg_at_5_reranked": 0.9368830196397312,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.3333333333333333
+    },
+    {
+      "id": "concurrency",
+      "query": "What distinguishes optimistic concurrency from database transactions using row locks?",
+      "baseline": [
+        "count",
+        "threads",
+        "optimistic",
+        "locking",
+        "wal",
+        "cache"
+      ],
+      "reranked": [
+        "optimistic",
+        "wal",
+        "locking",
+        "threads",
+        "count",
+        "cache"
+      ],
+      "labels": {
+        "count": 0,
+        "threads": 1,
+        "optimistic": 2,
+        "locking": 2,
+        "wal": 1,
+        "cache": 0
+      },
+      "ndcg_at_5_baseline": 0.6542173258293879,
+      "ndcg_at_5_reranked": 0.9550337350142764,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.3333333333333333
+    },
+    {
+      "id": "http-failover",
+      "query": "How does an HTTP client respect 429 Retry-After and perform provider failover?",
+      "baseline": [
+        "number",
+        "auth",
+        "cooldown",
+        "fallback",
+        "quota",
+        "css"
+      ],
+      "reranked": [
+        "cooldown",
+        "fallback",
+        "number",
+        "auth",
+        "quota",
+        "css"
+      ],
+      "labels": {
+        "number": 0,
+        "auth": 1,
+        "cooldown": 2,
+        "fallback": 2,
+        "quota": 2,
+        "css": 0
+      },
+      "ndcg_at_5_baseline": 0.6717287037439216,
+      "ndcg_at_5_reranked": 0.9502537878387615,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.6666666666666666
+    },
+    {
+      "id": "rank-fusion",
+      "query": "How can reciprocal rank fusion combine results whose raw scores use different scales?",
+      "baseline": [
+        "sports",
+        "cosine",
+        "rrf",
+        "duplicate",
+        "rerank",
+        "arithmetic"
+      ],
+      "reranked": [
+        "rrf",
+        "duplicate",
+        "rerank",
+        "arithmetic",
+        "sports",
+        "cosine"
+      ],
+      "labels": {
+        "sports": 0,
+        "cosine": 1,
+        "rrf": 2,
+        "duplicate": 2,
+        "rerank": 1,
+        "arithmetic": 0
+      },
+      "ndcg_at_5_baseline": 0.6542173258293879,
+      "ndcg_at_5_reranked": 0.9260446319296772,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.3333333333333333
+    },
+    {
+      "id": "job-recovery",
+      "query": "What should be recovered when a durable background job is interrupted by process restart?",
+      "baseline": [
+        "career",
+        "cron",
+        "recover",
+        "leases",
+        "client",
+        "shell"
+      ],
+      "reranked": [
+        "recover",
+        "client",
+        "leases",
+        "shell",
+        "cron",
+        "career"
+      ],
+      "labels": {
+        "career": 0,
+        "cron": 1,
+        "recover": 2,
+        "leases": 2,
+        "client": 2,
+        "shell": 0
+      },
+      "ndcg_at_5_baseline": 0.6717287037439216,
+      "ndcg_at_5_reranked": 0.9935774939007994,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.3333333333333333
+    },
+    {
+      "id": "doi-normalization",
+      "query": "How can DOI normalization preserve identity while removing resolver URL wrappers?",
+      "baseline": [
+        "authors",
+        "urls",
+        "doi",
+        "conflict",
+        "aliases",
+        "shortener"
+      ],
+      "reranked": [
+        "doi",
+        "conflict",
+        "urls",
+        "aliases",
+        "shortener",
+        "authors"
+      ],
+      "labels": {
+        "authors": 0,
+        "urls": 1,
+        "doi": 2,
+        "conflict": 2,
+        "aliases": 2,
+        "shortener": 0
+      },
+      "ndcg_at_5_baseline": 0.6717287037439216,
+      "ndcg_at_5_reranked": 0.9796808707575757,
+      "mrr_baseline": 0.3333333333333333,
+      "mrr_reranked": 1.0,
+      "overlap_at_3": 0.6666666666666666
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{% extends "sqladmin/layout.html" %}
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ request.session.csrf_token }}">{% endmacro %}
+{% block content_header %}<h1 class="page-title">Operations</h1>{% endblock %}
+{% block content %}
+<div class="col-12">
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  {% if result %}<div class="card mb-3"><div class="card-body"><h2 class="h3">Result</h2><pre>{{ result }}</pre></div></div>{% endif %}
+  {% if raw_token %}<div class="alert alert-success"><strong>Copy this client token now. It is shown once.</strong><pre id="new-client-token">{{ raw_token }}</pre></div>{% endif %}
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h3">Client tokens</h2>
+    <form method="post" class="mb-3">{{ csrf() }}<input type="hidden" name="command" value="create_token">
+      <label for="token-label">Label</label> <input id="token-label" name="label" required placeholder="Laptop / Claude Code">
+      <button type="submit" class="btn btn-primary">Create token</button>
+    </form>
+    <form method="post">{{ csrf() }}<input type="hidden" name="command" value="revoke_token">
+      <label for="token-id">Token</label> <select id="token-id" name="token_id" required>{% for token in tokens if not token.revoked %}<option value="{{ token.id }}">{{ token.id }} — {{ token.label }}</option>{% endfor %}</select>
+      <button type="submit" class="btn btn-danger">Revoke token</button>
+    </form>
+  </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h3">Accounts</h2>
+    <p>Create and edit accounts in <a href="{{ url_for('admin:list', identity='account') }}">Accounts</a>. New credentials are write-only; a blank credential keeps the existing value.</p>
+    <form method="post">{{ csrf() }}
+      <label for="account-id">Account</label> <select id="account-id" name="account_id" required>{% for account in accounts %}<option value="{{ account.id }}">{{ account.provider }} / {{ account.label }} ({{ account.id }})</option>{% endfor %}</select>
+      <button type="submit" name="command" value="test_account" class="btn btn-primary">Test</button>
+      <button type="submit" name="command" value="reset_account" class="btn btn-secondary">Reset availability</button>
+      {% if oauth_enabled %}<label for="mcp-url">MCP URL (optional override)</label> <input id="mcp-url" name="mcp_url" type="url" placeholder="Uses account or provider mcp_url"><button type="submit" name="command" value="oauth_connect" class="btn btn-secondary">Connect OAuth</button>{% endif %}
+    </form>
+  </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h3">Requests</h2><p>Replay uses the current configuration and bypasses caches.</p>
+    <form method="post">{{ csrf() }}<input type="hidden" name="command" value="replay_request">
+      <label for="request-id">Request</label> <select id="request-id" name="request_id" required>{% for item in requests %}<option value="{{ item.id }}">{{ item.tool }} / {{ item.id }}</option>{% endfor %}</select>
+      <button type="submit" class="btn btn-primary">Replay request</button>
+    </form>
+  </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h3">Jobs</h2>
+    <form method="post">{{ csrf() }}<input type="hidden" name="command" value="cancel_job">
+      <label for="job-id">Running job</label> <select id="job-id" name="job_id" required>{% for job in jobs %}<option value="{{ job.id }}">{{ job.capability }} / {{ job.id }}</option>{% endfor %}</select>
+      <button type="submit" class="btn btn-danger">Cancel job</button>
+    </form>
+  </div></div>
+  <div class="card"><div class="card-body">
+    <h2 class="h3">Cache</h2>
+    <form method="post">{{ csrf() }}<input type="hidden" name="command" value="clear_cache">
+      <label for="cache-kind">Cache</label> <select id="cache-kind" name="cache"><option value="all">All</option><option value="query">Query</option><option value="document">Document</option></select>
+      <button type="submit" class="btn btn-danger">Clear cache</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

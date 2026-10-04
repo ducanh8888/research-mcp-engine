@@ -1,0 +1,11 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12"><div class="card"><div class="card-body">
+  <h1 class="h2">Log out</h1>
+  <form method="post" action="{{ url_for('admin:logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ request.session.csrf_token }}">
+    <button class="btn btn-primary" type="submit">Log out of this session</button>
+    <a class="btn btn-secondary" href="{{ url_for('admin:index') }}">Keep working</a>
+  </form>
+</div></div></div>
+{% endblock %}

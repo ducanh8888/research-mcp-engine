@@ -1,0 +1,1 @@
+"""Private administration UI."""

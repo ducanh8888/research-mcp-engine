@@ -1,0 +1,98 @@
+[
+  {
+    "id": "continual-learning",
+    "query": "Which techniques prevent catastrophic forgetting during continual learning in neural networks?",
+    "documents": [
+      {"id": "gc", "title": "Memory retention in managed runtimes", "text": "Garbage collection removes unreachable objects. Memory leak detectors identify retained references in application heaps.", "relevance": 0},
+      {"id": "dropout", "title": "Dropout regularization", "text": "Randomly disabling hidden units during training improves generalization and reduces coadaptation in neural networks.", "relevance": 1},
+      {"id": "ewc", "title": "Elastic weight consolidation", "text": "Continual learning can protect parameters important to earlier tasks. A Fisher information penalty discourages changes that would cause catastrophic forgetting.", "relevance": 2},
+      {"id": "replay", "title": "Experience replay for sequential tasks", "text": "Rehearsing examples from earlier tasks while learning new ones helps neural networks retain earlier knowledge and avoid catastrophic forgetting.", "relevance": 2},
+      {"id": "erasure", "title": "Deleting stored customer records", "text": "Data retention policies specify when customer identifiers must be erased from an operational database.", "relevance": 0},
+      {"id": "si", "title": "Synaptic intelligence", "text": "Online estimates of parameter importance constrain subsequent task learning to preserve previously acquired skills.", "relevance": 2}
+    ]
+  },
+  {
+    "id": "private-mcp",
+    "query": "How can an MCP server keep bearer tokens safe when exposed only on a Tailscale network?",
+    "documents": [
+      {"id": "dns", "title": "Naming a Tailscale device", "text": "MagicDNS assigns convenient names to machines connected to a tailnet.", "relevance": 1},
+      {"id": "oauth", "title": "OAuth marketing integration", "text": "A public campaign platform uses browser redirects to connect social media accounts.", "relevance": 0},
+      {"id": "token", "title": "Private MCP authentication", "text": "Require bearer tokens for every MCP request, store only token hashes, support revocation, and bind the server to a loopback or tailnet interface.", "relevance": 2},
+      {"id": "origin", "title": "Network and origin guards", "text": "Tailnet ACLs restrict network access. An Origin allowlist prevents untrusted browser origins from calling the authenticated MCP service.", "relevance": 2},
+      {"id": "secret", "title": "Credential storage", "text": "Keep provider credentials encrypted at rest and exclude bearer secrets from access logs and source control.", "relevance": 2},
+      {"id": "proxy", "title": "Public reverse proxy", "text": "A reverse proxy exposes an application to anyone on the internet with a public HTTPS URL.", "relevance": 0}
+    ]
+  },
+  {
+    "id": "paper-versions",
+    "query": "Why do preprints and published journal articles need separate identifiers during paper search?",
+    "documents": [
+      {"id": "template", "title": "Preparing article templates", "text": "A journal template defines heading styles, author affiliations and bibliography formatting.", "relevance": 0},
+      {"id": "trackers", "title": "Removing URL trackers", "text": "Tracking query parameters can create several URLs for one landing page.", "relevance": 1},
+      {"id": "distinct", "title": "Preserving version identity", "text": "A preprint DOI and a journal DOI identify distinct evidence records. A shared title or landing URL must not collapse their provenance.", "relevance": 2},
+      {"id": "relations", "title": "Explicit publication relationships", "text": "Publisher relations such as is-preprint-of link a preprint to its published article while retaining both identifiers and source assertions.", "relevance": 2},
+      {"id": "peer", "title": "Editorial changes after peer review", "text": "A published article may differ from the earlier preprint after peer review. Separate identifiers allow readers to inspect the correct version.", "relevance": 2},
+      {"id": "issue", "title": "Printing journal issues", "text": "A publisher assembles typeset articles into an issue and prepares copies for distribution.", "relevance": 0}
+    ]
+  },
+  {
+    "id": "concurrency",
+    "query": "What distinguishes optimistic concurrency from database transactions using row locks?",
+    "documents": [
+      {"id": "count", "title": "Counting site visits", "text": "Analytics systems record page views and report daily visitor totals.", "relevance": 0},
+      {"id": "threads", "title": "Thread scheduling", "text": "Operating systems schedule runnable threads onto processor cores.", "relevance": 1},
+      {"id": "optimistic", "title": "Optimistic concurrency control", "text": "A transaction checks a version or timestamp before committing. A concurrent change causes the transaction to retry instead of holding a row lock throughout its work.", "relevance": 2},
+      {"id": "locking", "title": "Pessimistic row locking", "text": "A SELECT FOR UPDATE operation locks selected rows. Competing writers wait until the transaction releases its locks.", "relevance": 2},
+      {"id": "wal", "title": "SQLite write ahead logging", "text": "WAL allows concurrent readers while a single writer commits changes. SQLite does not offer the same row locking model as PostgreSQL.", "relevance": 1},
+      {"id": "cache", "title": "Browser cache expiry", "text": "HTTP freshness directives control whether a cached resource may be reused.", "relevance": 0}
+    ]
+  },
+  {
+    "id": "http-failover",
+    "query": "How does an HTTP client respect 429 Retry-After and perform provider failover?",
+    "documents": [
+      {"id": "number", "title": "Integer representation", "text": "The integer 429 can be represented in decimal, binary or hexadecimal notation.", "relevance": 0},
+      {"id": "auth", "title": "HTTP authentication errors", "text": "An HTTP 401 response means valid authentication credentials were not provided.", "relevance": 1},
+      {"id": "cooldown", "title": "Rate limit cooldown", "text": "Parse Retry-After as seconds or an HTTP date, persist the account cooldown, and avoid retrying it before the indicated time after a 429 response.", "relevance": 2},
+      {"id": "fallback", "title": "Provider fallback", "text": "When one provider is rate limited, try a configured healthy alternative within the request deadline and report the failed provider in coverage.", "relevance": 2},
+      {"id": "quota", "title": "Shared provider quotas", "text": "Accounts belonging to one quota group should share a cooldown so an exhausted team budget is not bypassed by rotating API keys.", "relevance": 2},
+      {"id": "css", "title": "Rendering an error page", "text": "CSS typography and spacing improve the readability of a browser error page.", "relevance": 0}
+    ]
+  },
+  {
+    "id": "rank-fusion",
+    "query": "How can reciprocal rank fusion combine results whose raw scores use different scales?",
+    "documents": [
+      {"id": "sports", "title": "Scoring a sports tournament", "text": "Tournament standings use wins, losses and points scored to rank competing teams.", "relevance": 0},
+      {"id": "cosine", "title": "Cosine similarity", "text": "Vector similarity measures the angle between query and document embeddings.", "relevance": 1},
+      {"id": "rrf", "title": "Reciprocal rank fusion", "text": "RRF sums one divided by a constant plus each provider rank. Using ordinal ranks avoids assuming raw relevance scores from different search engines are calibrated.", "relevance": 2},
+      {"id": "duplicate", "title": "Fusion after exact deduplication", "text": "Merge matching evidence first and count one best rank per provider. Repeated hits from one ranked list must not inflate the fused score.", "relevance": 2},
+      {"id": "rerank", "title": "Cross encoder reranking", "text": "An optional cross encoder can reorder the fused candidate set using a shared relevance model after rank fusion.", "relevance": 1},
+      {"id": "arithmetic", "title": "Adding measured quantities", "text": "Adding values expressed in different units requires converting them to a compatible measurement scale.", "relevance": 0}
+    ]
+  },
+  {
+    "id": "job-recovery",
+    "query": "What should be recovered when a durable background job is interrupted by process restart?",
+    "documents": [
+      {"id": "career", "title": "Finding a new job", "text": "A resume lists previous employment and helps candidates apply for open positions.", "relevance": 0},
+      {"id": "cron", "title": "Scheduling periodic tasks", "text": "A cron expression describes when a recurring task should start.", "relevance": 1},
+      {"id": "recover", "title": "Durable job recovery", "text": "Persist the provider operation ID, job status, polling cursor and partial results. After restart, resume polling rather than submitting the costly operation again.", "relevance": 2},
+      {"id": "leases", "title": "Worker leases and idempotency", "text": "A restarted worker can reclaim a stale job lease. Idempotency keys and stored operation identifiers prevent duplicate submissions.", "relevance": 2},
+      {"id": "client", "title": "Polling a job handle", "text": "Clients can retrieve durable results by job identifier after reconnecting to a restarted server.", "relevance": 2},
+      {"id": "shell", "title": "Stopping a foreground shell process", "text": "A terminal interrupt signal can stop a foreground command.", "relevance": 0}
+    ]
+  },
+  {
+    "id": "doi-normalization",
+    "query": "How can DOI normalization preserve identity while removing resolver URL wrappers?",
+    "documents": [
+      {"id": "authors", "title": "Formatting author names", "text": "Bibliographies can display initials or full given names depending on the citation style.", "relevance": 0},
+      {"id": "urls", "title": "General URL normalization", "text": "Normalize host case, default ports and tracking parameters while preserving meaningful paths and query parameters.", "relevance": 1},
+      {"id": "doi", "title": "DOI identifier normalization", "text": "Extract the DOI from a doi.org resolver URL or DOI label and normalize its case. The resulting DOI, rather than the resolver scheme or wrapper, identifies the record.", "relevance": 2},
+      {"id": "conflict", "title": "Conservative DOI conflict checks", "text": "Records with different normalized DOIs remain distinct even if a publisher landing URL matches. Identifier conflict checks protect evidence identity.", "relevance": 2},
+      {"id": "aliases", "title": "Stable identifier aliases", "text": "Keep a previously issued URL handle as a safe alias when an exact DOI is later obtained, unless that URL is ambiguous across conflicting DOI records.", "relevance": 2},
+      {"id": "shortener", "title": "Marketing link shortening", "text": "A link shortener redirects a small promotional URL to a campaign landing page.", "relevance": 0}
+    ]
+  }
+]

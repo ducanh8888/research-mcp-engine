@@ -1,0 +1,28 @@
+services:
+  research-engine:
+    build: .
+    restart: unless-stopped
+    # Match the owner of the mode-0600 runtime files on the host.
+    user: "${RESEARCH_ENGINE_UID:-1000}:${RESEARCH_ENGINE_GID:-1000}"
+    ports:
+      - "127.0.0.1:8765:8765"
+      - "100.66.213.111:8765:8765"
+    environment:
+      RESEARCH_ENGINE_CONFIG: /app/config.yaml
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
