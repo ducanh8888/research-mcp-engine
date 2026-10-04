@@ -41,6 +41,21 @@ def query(req: dict[str, Any]) -> str:
     return value.strip()
 
 
+def domain_query(text: str, req: dict[str, Any], opts: dict[str, Any]) -> str:
+    """Use documented site operators where an API has no native domain filter."""
+    include = req.get("include_domains", opts.get("include_domains", [])) or []
+    exclude = req.get("exclude_domains", opts.get("exclude_domains", [])) or []
+    if isinstance(include, str):
+        include = [include]
+    if isinstance(exclude, str):
+        exclude = [exclude]
+    if include:
+        text = f"({text}) (" + " OR ".join(f"site:{item}" for item in include) + ")"
+    if exclude:
+        text += " " + " ".join(f"-site:{item}" for item in exclude)
+    return text
+
+
 def limit(req: dict[str, Any], maximum: int = 100, default: int = 10) -> int:
     try:
         value = int(req.get("limit", req.get("num_results", req.get("max_results", default))))
@@ -67,14 +82,14 @@ def retry_after(response: httpx.Response) -> float | None:
             return None
 
 
-def _error_text(value: Any) -> str:
+def error_text(value: Any) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, list):
-        return "; ".join(_error_text(item) for item in value)
+        return "; ".join(error_text(item) for item in value)
     if isinstance(value, dict):
         return "; ".join(
-            _error_text(value[key])
+            error_text(value[key])
             for key in ("tag", "code", "type", "message", "error", "detail", "details")
             if key in value
         )
@@ -90,7 +105,7 @@ def checked_json(
         data = {}
     failed = response.is_error or (isinstance(data, dict) and data.get("success") is False)
     if failed:
-        text = _error_text(data) or response.reason_phrase or "upstream request failed"
+        text = error_text(data) or response.reason_phrase or "upstream request failed"
         for secret in ctx.credentials.values():
             if isinstance(secret, str) and secret:
                 text = text.replace(secret, "[redacted]")
@@ -99,7 +114,7 @@ def checked_json(
         exhausted = (
             "no_more_credits", "api_key_budget_exceeded", "team_budget_exceeded",
             "insufficient credits", "out of credits", "no credits", "credits exhausted",
-            "quota exhausted", "monthly quota", "daily quota", "credit limit",
+            "not enough credits", "quota exhausted", "monthly quota", "daily quota", "credit limit",
         )
         plan = ("feature_disabled", "upgrade your plan", "not available on your plan", "plan required")
         target = ("prohibited_content", "blocked url", "robots.txt", "not crawlable")
@@ -148,6 +163,8 @@ def hits(rows: Any, ctx: CallContext, *, maximum: int | None = None) -> list[Hit
         if not isinstance(metadata, dict):
             metadata = {}
         url = row.get("url") or row.get("link") or row.get("html_url") or metadata.get("sourceURL")
+        if isinstance(url, str):
+            url = url.strip()
         if not isinstance(url, str) or not url.startswith(("https://", "http://")):
             continue
         snippet = row.get("snippet") or row.get("description") or row.get("content")
@@ -156,6 +173,8 @@ def hits(rows: Any, ctx: CallContext, *, maximum: int | None = None) -> list[Hit
             snippet = "\n".join(str(item) for item in highlights if item)
         author = row.get("author")
         authors = row.get("authors") or ([author] if isinstance(author, str) and author else [])
+        if isinstance(authors, (str, dict)):
+            authors = [authors]
         authors = [str(item.get("name", "")) if isinstance(item, dict) else str(item) for item in authors]
         published = row.get("publishedDate") or row.get("published") or row.get("date") or row.get("age")
         year = int(str(published)[:4]) if published and str(published)[:4].isdigit() else None
@@ -167,6 +186,8 @@ def hits(rows: Any, ctx: CallContext, *, maximum: int | None = None) -> list[Hit
         ))
         if maximum and len(out) >= maximum:
             break
+    if rows and not out:
+        raise ProviderError(ErrorKind.TRANSIENT, f"{ctx.provider}: results contain no usable source URL")
     return out
 
 
