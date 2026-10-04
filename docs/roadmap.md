@@ -20,22 +20,30 @@ This replaces the old P0–P4 plan. No phase is declared accepted from source in
 
 The CPU artifact records eight authored queries with six candidates each. It is a recorded
 local execution, not representative research evaluation or a newly rerun result.
-This documentation pass did not execute the application suite or live provider calls.
+The extended [code audit](code-audit.md) found additional contract/state/lifecycle defects
+and reproduced eight behaviors with isolated original-source probes. It did not execute
+the full application suite or live provider calls. All cleanup items remain open.
 
 ## Work order
 
 | Phase | Required scope | Exit criteria |
 |---|---|---|
-| **P0 Baseline cleanup** | Close active cleanup items C01–C09 and C11–C13 in [cleanup.md](cleanup.md); reproduce baseline tests/runtime; preserve credentials/operator data and explicit routes | Fresh checkout installs from lockfile; relevant tests and HTTP discovery pass; missing required modules fail visibly; no guessed reset/false Test success/manual cache workaround; docs match executable paths |
+| **P0.1 Reproduce and repair correctness** | Establish frozen-lock checks/container first (C31/C32); fix C14/C15/C16/C18/C19/C20/C22/C24/C26/C27; establish safe upgrades (C28) before any schema change; retain regression cases for all eight reproduced behaviors | Real ORM block-state/fresh-versus-upgraded DB tests; public tool parameters reach upstream; one non-idempotent start submission; complete metadata coverage/unknown absence; usable read fallback; conflicting evidence preserved; bounded responses/deadlines; terminal correlated/redacted request errors; lint, relevant tests and HTTP smoke actually pass |
+| **P0.2 Consolidate and preserve upgrades** | Close C01–C09/C11–C13 plus C23/C25/C29/C30; extract only the necessary shared contracts/state/storage functions; preserve credentials, operator routes, restart and OAuth | Required imports fail visibly; locked SDK behavior justified; no guessed reset/false Test success/manual cache workaround; actual rate/concurrency limits; responsive async jobs; catalog refresh preserves operator choices; reference-safe retention/maintenance |
 | **P1 Minimal OmniRoute bridge** | One bridge for explicit-provider search/fetch and optional API rerank; start with two search providers and one reader; inspect the actual installed OmniRoute version/API/credentials | Real MCP search/read returns normalized provenance; explicit provider cannot silently substitute; 401/429/quota/timeout and bridge outage are scoped correctly; commodity account ownership stays upstream; C10 cutover criteria pass for each migrated operation |
 | **P2 Specialist multi-account** | Implement priority, round-robin and quota-aware selection for direct providers; admin setting; shared quota eligibility, unknown/stale quota, concurrent selection; minimal migrations only | Two specialist accounts exercise each mode; real auth/rate/plan failure falls back correctly; group cooldown prevents retrying another member; restart preserves credentials/availability; one provider contributes one ranked list |
-| **P3 Specialist completion** | Harden existing academic/REST/GitHub adapters and typed paper/metadata/related/verify/graph/editorial outputs; finish demonstrated direct operation gaps, including Firecrawl map/crawl contract | Real open-provider calls and targeted fixtures pass; metadata resolves per ID; ID conflicts stay distinct; source assertions/tallies/claim passages stay distinguishable; local handles survive restart; unavailable paid accounts remain explicitly pending |
+| **P3 Specialist completion** | Harden existing academic/REST/GitHub adapters and typed paper/metadata/related/verify/graph/editorial outputs; close C17/C21; finish demonstrated direct operation gaps, including Firecrawl map/crawl contract | Related modes/all seeds and citation-text resolution are implemented or explicitly unsupported; merged graphs preserve strong-ID conflicts/provenance/endpoints/bounds; real open-provider calls and targeted fixtures pass; metadata resolves per ID; local handles survive restart; unavailable paid accounts remain explicitly pending |
 | **P4 Hosted research MCP and async** | Scite MCP, Elicit MCP, Undermind; Consensus REST first, MCP only for a verified gap; exact upstream schemas, account OAuth/CIMD, source parsing, one recoverable job lifecycle | Eligible live accounts initialize/list/call; refresh/concurrency and same-session HTTPS callback pass; deep search/review/crawl job completes across restart; unknown start never duplicates work; ownership/cancel/failure verified |
 | **P5 Private integration acceptance** | Wire optional rerank through actual engine path with diagnostics/secret ownership; validate private deployment and documented run/connect paths end-to-end | Container health and real MCP calls pass; actual Claude Code and reachable tailnet peer verified; available agentRT verified; auth rejection, failover, partial/cache, handles and jobs tested; cloud/local rerank checks reported separately; rerank stays off until suitable evaluation |
 
 Execute phases in order. Existing code can satisfy a phase after verification and corrections;
 a phase is not permission to rewrite a working subsystem. External blocking of one provider
 does not stop independent work, and does not turn the blocked check into PASS.
+
+Cleanup ownership: P0.1 owns C14–C16/C18–C20/C22/C24/C26–C28/C31–C32;
+P0.2 owns C01–C09/C11–C13/C23/C25/C29–C30; P3 owns C17/C21.
+C10 closes per bridged operation in P1, with actual rerank wiring/acceptance in P5.
+P2 and P4 extend corrected account/job paths; they do not postpone foundational fixes.
 
 ## Provider work queue
 

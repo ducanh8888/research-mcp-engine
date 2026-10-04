@@ -25,6 +25,7 @@ bridge cutover. Public ingress and historical Deferred machinery are outside the
 | [Design v4](docs/design.md) | Runtime contracts and operation ownership |
 | [Roadmap](docs/roadmap.md) | Baseline evidence, ordered work and acceptance |
 | [Required cleanup](docs/cleanup.md) | Source-grounded removals/replacements and closure checks |
+| [Code audit](docs/code-audit.md) | Additional main defects, isolated reproductions and repair boundaries |
 | [Deployment](docs/deployment.md) | Baseline local/Compose commands and pending checks |
 | [Research](docs/research.md) | Current conclusions and historical evidence index |
 | [Benchmark](benchmarks/README.md) | Recorded eight-case local rerank measurement and limits |

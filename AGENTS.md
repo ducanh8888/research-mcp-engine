@@ -6,7 +6,7 @@ Code baseline: `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`.
 `main` is frozen. Work on `research-specialists`; do not advance main without an owner instruction.
 
 Read [requirements](docs/requirements-notes.md), [design v4](docs/design.md),
-[roadmap](docs/roadmap.md) and [cleanup](docs/cleanup.md).
+[roadmap](docs/roadmap.md), [cleanup](docs/cleanup.md) and [code audit](docs/code-audit.md).
 Requirements record owner scope; design defines contracts; roadmap owns sequencing/acceptance.
 Research/01–07 is historical evidence, not an implementation checklist.
 

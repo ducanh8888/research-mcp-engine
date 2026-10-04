@@ -18,7 +18,7 @@ query-intent classifier, internal RAG or scientific decision layer.
 | Decision | Requirement |
 |---|---|
 | Branches | Freeze `main` at `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`; work on `research-specialists` |
-| Immediate task | Clean docs/roadmap and mark source-grounded workaround removals before further implementation |
+| Immediate task | Clean docs/roadmap, audit main-code defects and mark removals/corrections before further implementation |
 | OmniRoute coverage | Defer new direct work on covered search/fetch/API rerank operations; use one small bridge |
 | Specialist work | Build/harden operations OmniRoute does not provide: academic, hosted research MCP, GitHub and site map/crawl gaps |
 | Existing adapters | Preserve the checkpoint; retire redundant active paths only after equivalent bridge behavior is verified |
@@ -58,6 +58,7 @@ Technical limits and entitlement remain explicit; the owner assesses provider te
 ## Work and validation
 
 [cleanup.md](cleanup.md) lists observed shortcuts with required action and closure checks.
+[code-audit.md](code-audit.md) records reproduced/static findings and verification limits.
 [roadmap.md](roadmap.md) replaces the old docs-only P0–P4 plan.
 Detailed research/01–07 is historical evidence, not permission to restore rejected features.
 No code/live fixes are claimed by this documentation-only scope update.

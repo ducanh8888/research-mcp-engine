@@ -5,6 +5,7 @@ Status: current target architecture, updated 2026-10-05. Code baseline:
 [roadmap.md](roadmap.md) records implementation status and acceptance.
 [requirements-notes.md](requirements-notes.md) records owner decisions.
 [cleanup.md](cleanup.md) records required removals and replacements.
+[code-audit.md](code-audit.md) records additional baseline defects and evidence limits.
 
 `main` stays frozen at that baseline. Work continues on `research-specialists`.
 Existing source and fixtures are implementation evidence, not proof of a live deployment.
