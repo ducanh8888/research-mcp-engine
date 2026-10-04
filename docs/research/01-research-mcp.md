@@ -1,5 +1,10 @@
 # 01 — Deep read: `vvzvlad/research-mcp`
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research input for the design doc. Written 2026-09-29.
 Source: `github.com/vvzvlad/research-mcp`, HEAD `11f297d` (2026-09-19, shallow clone, 1 commit visible), MIT.
 All paths below are relative to the repo root. Line numbers refer to that commit.

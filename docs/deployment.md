@@ -1,8 +1,14 @@
 # Private deployment and validation
 
-This guide follows the [v3 design](design.md). The service runs one process with
-SQLite WAL, encrypted account secrets, durable handle and job storage, Streamable
-HTTP MCP at `/mcp`, and sqladmin at `/admin`.
+This guide records the baseline CLI/Compose path and follows [design v4](design.md).
+Current work and acceptance are in [roadmap.md](roadmap.md). The baseline implements
+one process, SQLite WAL, encrypted secrets, handles/jobs, MCP `/mcp` and sqladmin
+`/admin`; application/container/live acceptance is not established by this documentation pass.
+
+The OmniRoute bridge is not implemented at the frozen checkpoint. Commodity keys
+below apply to existing direct adapters only; after verified cutover, manage those
+keys/accounts in OmniRoute and only the bridge service credential in the engine.
+Do not invent a bridge environment variable or advertise it as configurable before it ships.
 
 ## Prerequisites
 
@@ -115,8 +121,9 @@ the key without migrating encrypted account data prevents those accounts from
 being decrypted. Restoring a database requires the matching encryption key.
 
 Upstream OAuth connections have their own callback requirements. Configure an
-HTTPS `public_base_url` and matching trusted origin before a hosted provider
-requires a non-loopback OAuth callback. Follow the provider's account and plan
+HTTPS `public_base_url` and matching trusted origin; the implemented callback is
+`/admin/oauth/callback`, on the same origin as admin Connect. A hosted provider
+must accept the exact redirect URI before OAuth setup is called complete. Follow the provider's account and plan
 requirements. OAuth initialization and refresh checks remain provider-specific;
 plain MCP bearer authentication on this private server does not establish them.
 
@@ -163,11 +170,15 @@ provider checks before relying on an upstream job's recovery behavior.
 
 ## Validation record
 
+The first two entries are prior implementation reports retained for context; they
+were not rerun in the 2026-10-05 documentation pass. No command output from that
+pass establishes deployment acceptance.
+
 Update this table with commands actually executed in the deployment environment.
 Fixture tests verify local behavior and do not establish hosted-provider or remote
 client compatibility.
 
-| Check | Initial implementation validation |
+| Check | Reported baseline validation / remaining check |
 |---|---|
 | Compose syntax | `docker compose config --quiet` passed locally |
 | Smoke client CLI | `scripts/mcp_smoke.py --help` passed in Python 3.12 with FastMCP 4.0.10 |
@@ -181,6 +192,6 @@ client compatibility.
 | Claude Code and agentRT remote MCP | Pending actual client execution; unavailable agentRT stays pending |
 | Off-tailnet port denial | Pending external network check |
 
-The [definition of done](design.md#171-definition-of-done) requires the relevant
-phase exit criteria, including remote client checks. A local test pass alone does
-not establish phase or v1 acceptance.
+The [definition of done](roadmap.md#definition-of-done) requires relevant phase
+exit criteria, including actual remote client checks. A local fixture pass alone
+does not establish private-release acceptance.

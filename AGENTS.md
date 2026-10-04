@@ -1,44 +1,66 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Current state and authority
 
-This repository is currently a design and research workspace; the engine is not implemented.
+Code baseline: `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`.
+`main` is frozen. Work on `research-specialists`; do not advance main without an owner instruction.
 
-- `docs/design.md`: current v3 architecture, implementation contracts, and P0–P4 roadmap.
-- `docs/requirements-notes.md`: user requirements and operating constraints.
-- `docs/research.md`: research overview and recommendations.
-- `docs/research/01-*.md` through `07-*.md`: detailed upstream and provider investigations.
+Read [requirements](docs/requirements-notes.md), [design v4](docs/design.md),
+[roadmap](docs/roadmap.md) and [cleanup](docs/cleanup.md).
+Requirements record owner scope; design defines contracts; roadmap owns sequencing/acceptance.
+Research/01–07 is historical evidence, not an implementation checklist.
 
-The proposed `src/research_engine/` package, `tests/`, Python manifest, and Docker Compose configuration are described in the design but do not exist yet. No application assets are present.
+The engine is implemented in part: `src/`, `tests/`, migrations, Docker and CLI exist.
+Hosted-MCP normalized adapters and the OmniRoute bridge are missing at baseline.
+Do not call a phase done because modules/fixtures exist.
 
-## Build, Test, and Development Commands
+## Scope
 
-Run these from the repository root:
+Defer direct development for search/fetch/API rerank operations already covered by OmniRoute.
+Use one small explicit-provider bridge. Build research-specialist gaps and their multi-account
+selection: priority, round-robin, quota-aware. Commodity accounts stay upstream in OmniRoute.
 
-- `rg --files docs`: list the documentation files.
-- `git diff --check`: check changes for whitespace errors.
-- `git diff -- docs/ AGENTS.md`: review tracked documentation changes before committing; inspect new, untracked files separately.
+Reuse compatible code, preserve attribution and avoid importing a model router's control plane.
+Deferred items are not an automatic follow-on queue. Remove/replace marked shortcuts using
+their closure criteria; preserve validated fallback, OAuth and restart semantics.
 
-There are no build, runtime, or automated test commands yet. Document working commands here when implementation tooling is added.
+## Structure
 
-## Coding Style & Naming Conventions
+`src/research_engine/`: server, router, providers, merge, jobs, admin, storage, cache/config/CLI.
+`tests/`: pytest fixtures/transport tests. `docs/`: current contracts and historical notes.
+`scripts/`: MCP smoke and optional rerank benchmark. `benchmarks/`: limited recorded evidence.
 
-Use Markdown headings, short paragraphs, tables for comparisons, and fenced code blocks with language labels. Use relative links between repository documents. Follow the numbered, lowercase, hyphenated research filename pattern, such as `08-provider-topic.md`.
+## Development commands
 
-For future Python code, use four-space indentation, `snake_case` modules/functions, and `PascalCase` classes. The design targets Python 3.12; no formatter or linter is configured yet.
+From the root with Python ≥3.12 and uv available:
 
-## Testing & Documentation Validation
+```bash
+uv sync --frozen --extra dev
+uv run --frozen pytest
+uv run --frozen ruff check src tests scripts
+git diff --check
+```
 
-No test framework or coverage threshold is configured. Upstream test results recorded in research notes are not this repository's test results. Check changed links and cited paths, run `git diff --check`, and keep related design and research statements consistent.
+Local install/run commands are in [deployment.md](docs/deployment.md).
+Do not run paid/live calls implicitly as part of a fixture test.
+Do not change the lockfile merely to make a local environment pass.
 
-For implementation, organize tests under `tests/` using `test_*.py` names. Follow the [definition of done](docs/design.md#171-definition-of-done) and relevant roadmap exit criteria, including failover, authentication, identifier deduplication, and job recovery. Record unavailable live checks as pending.
+For documentation-only edits, check relative links, referenced paths, consistency and whitespace;
+application tests are not required unless executable behavior also changes.
+For code edits, run focused meaningful checks plus required phase checks.
 
-## Commit & Pull Request Guidelines
+## Validation and commits
 
-Recent commits use concise, descriptive subjects, such as `Clarify design v3 implementation contracts`; no mandatory prefix convention is evident. Keep each commit focused.
+Record actual commands/results and exact blockers. Separate static source inspection,
+fixture tests, recorded artifacts, live providers and actual remote clients.
+Missing credentials/eligible plans leave checks pending, not successful.
 
-PRs should summarize changes, identify affected design sections, link related issues or sources, and report validation performed. Label proposals, locally verified findings, and live-tested behavior clearly. Cite upstream commit hashes and paths when documenting copied code.
+Keep commits focused; review tracked and new files. Preserve operator routes, data, credentials
+and notices during cutover. Python: four-space indentation, snake_case functions/modules,
+PascalCase classes; follow existing Ruff configuration.
 
-## Security & Configuration
+## Secrets
 
-Keep provider credentials, bearer tokens, OAuth secrets, and encryption keys out of commits and examples. `.gitignore` excludes `.env` and `.env.*` while allowing `.env.example`; use placeholders in any example configuration.
+Never commit API keys, OAuth tokens, bearer tokens, runtime config, encryption/session keys or
+bootstrap credentials. Store account secrets through the encrypted store; redact logs/examples.
+Client bearer tokens must never be forwarded to an upstream provider or OmniRoute.

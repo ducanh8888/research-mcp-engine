@@ -1,137 +1,63 @@
 # Research Engine — Requirements Notes
 
-Status: clarification rounds 1–7 recorded; the **2026-09-30 pivot** below and [design.md](design.md) v3 are the
-current implementation decisions. Earlier decision tables and research tasks are historical where they conflict.
-Last updated: 2026-10-02
+Current owner decisions, updated 2026-10-05.
+[design.md](design.md) defines runtime contracts; [roadmap.md](roadmap.md) defines the work queue.
+Superseded requirement tables remain in git history, not in the active specification.
 
-## Positioning
+## Goal and boundary
 
-"OmniRoute for research": 1 MCP endpoint → many research providers → many accounts →
-automatic routing/failover → clean ranked evidence.
+One private MCP for search / retrieve / verify / merge / rank across research providers.
+Consumers are local Claude Code/agentRT sessions and tailnet machines.
+The engine returns compact results with handles and provenance; the consumer interprets evidence.
 
-**In scope:** search / retrieve / verify / merge / rank infrastructure.
-**Out of scope:** hypothesis generation, research priority, knowledge admission,
-campaign opening, scientific decisions, final source acceptance. Not an autonomous researcher.
+No hypothesis generator, research scheduler, evidence judge, automatic best-N source selector,
+query-intent classifier, internal RAG or scientific decision layer.
 
-## Guiding principle: maximize reuse
+## Current scope
 
-Reuse existing source code wherever it fits a **minimal** design (adapters, HTTP/SSRF/PDF layers, OAuth, storage crypto,
-UI components). Reuse means taking code, not importing a source repo's abstractions or control plane
-(clarified 2026-09-30 after design review). Custom code only for the research-specific core (capability routing,
-account failover, canonicalization/dedup, fusion). Language: **Python**.
-
-## Source repos
-
-This is the original research inventory, **not** a mandate to copy every listed component. Current reuse decisions
-are in [design.md §2](design.md#2-repository-layout-and-provenance).
-
-| Tier | Repo | Lang / License | Role | Reuse mode |
-|---|---|---|---|---|
-| Core | `modelcontextprotocol/python-sdk` | Py / MIT | MCP server/client, Streamable HTTP, OAuth primitives | Dependency |
-| Core | `vvzvlad/research-mcp` | Py / MIT | Provider type/instance, search/read pipeline, failover (402/429/credit-body detection), URL dedup, rerank, URL guard, PDF | **Copy** (author permission; credit in README). No upstream sync; manually cherry-pick later if needed |
-| Gateway/Auth | `R0Wi/mcp-gateway` | Py (FastAPI+FastMCP 4) / no LICENSE file, pyproject says MIT | Client-facing OAuth 2.1 AS (DCR/CIMD/PKCE, RFC 8414/9728/8707), upstream MCP OAuth client + token refresh, Fernet-encrypted SQLite, alembic, YAML config, both MCP protocol eras | **Copy** (author permission; credit in README) |
-| Gateway/Auth | `metatool-ai/metamcp` | TS / MIT | Aggregation, namespace, middleware, tool filtering | Reference |
-| Provider/Pipeline | `spences10/mcp-omnisearch` | TS / MIT | Multi-search adapters, merge/rerank | Reference |
-| Provider/Pipeline | `exa-labs/exa-mcp-server` | TS / MIT | Exa tool schemas/params | Reference; implement via `exa-py` |
-| Provider/Pipeline | `firecrawl/firecrawl-mcp-server` | JS / MIT | Firecrawl tool schemas/params | Reference; implement via `firecrawl-py` |
-| Admin/Router | `diegosouzapw/OmniRoute` | TS (Next.js/React, recharts, xyflow, monaco) / MIT | Dashboard UI; combo/fallback chains, quota/usage tracking, circuit breaker/cooldown | **Copy React components**; **port logic to Python** |
-| Admin/Router | `decolua/9router` | JS (Next.js/React) / MIT | Same as OmniRoute (predecessor/sibling) | Copy/port where better than OmniRoute |
-| Framework | `jlowin/fastmcp` | Py / Apache-2.0 | Proxy/mount upstream MCP, OAuth proxy, middleware, tool transform | **Evaluate vs raw python-sdk** (note: mcp-gateway already depends on FastMCP 4) |
-| — | `scitedotai/scite-mcp-skill` | MIT | Skill/reference only | Not a dependency |
-
-Hosted MCP providers (no fork, connect directly via MCP client + OAuth): **Scite, Elicit,
-Undermind, Consensus**.
-
-## Original decisions (historical where superseded)
-
-The 2026-09-30 pivot and current design supersede rows below about public ingress, client OAuth, gateway-as-shell,
-SPA, heuristic classification, implicit enrichment and routing/control-plane strategies.
-
-| Topic | Decision |
+| Decision | Requirement |
 |---|---|
-| Upstream access | **Hybrid.** Official REST API/SDK where available (Exa via exa-py, Firecrawl via firecrawl-py, GitHub, Tavily, OpenAlex/Crossref/S2/arXiv). MCP-client-over-OAuth for MCP-only providers (Scite, Elicit, Undermind, Consensus). |
-| Upstream tool exposure | **Hidden.** Consumers see only normalized capability tools; upstream tools are internal. |
-| Deployment | **Self-hosted, single user** (no plan for many users). Home machine + **Cloudflare Tunnel** for HTTPS. OAuth so ChatGPT / Claude.ai can connect; also Claude Code / agentRT. |
-| Skeleton | Delegated to design doc. Leaning: mcp-gateway as app shell (auth, storage, upstream clients, config) + research-mcp pipeline/providers ported in as engine core. |
-| Storage | Delegated to design doc. Criteria: fast to ship, few bugs, easy to scale. Leaning: single SQLite (WAL, encrypted secrets, alembic) incl. cache/jobs/handles; storage interfaces allow later Postgres/Redis. |
-| First deliverable | **Research + design doc** (no code yet). Docs in Markdown, English. |
-| Account pool | Multiple keys/plans/accounts per provider; mostly 1 today; model supports N. Used for failover, rotation, cost allocation, plan-gated capabilities. Any number of accounts and any strategy (owner decides ToS). |
-| MCP tool surface | **One tool per capability** on `/mcp` (+ `get_job`). ChatGPT `search`/`fetch` only on `/mcp/compat` (design v2 §4). |
-| Capability classification | Consumer specifies (tool choice); rule/heuristic fallback. No LLM in the engine. |
-| Reranker | Pluggable + toggleable: local cross-encoder or rerank API. Default fusion = RRF. |
-| Long-running jobs | Async jobs (job_id + poll/notify), persisted across restarts. |
-| Open metadata | OpenAlex, Crossref, Semantic Scholar, arXiv as internal resolver **and** providers. |
-| Admin UI | **Copy React components from OmniRoute/9router** → SPA over a Python admin API. Keep mcp-gateway's OAuth login/consent pages only. |
-| Admin v1 scope | Provider/account mgmt + OAuth connect + test; health/quota dashboard; request log + replay; policy editor (routing, fusion weights, reranker toggle). |
-| Router logic from OmniRoute/9router | Port: combo/fallback chains, quota/usage tracking, circuit breaker/cooldown. **Plus inventory any other reusable logic** during research. |
+| Branches | Freeze `main` at `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`; work on `research-specialists` |
+| Immediate task | Clean docs/roadmap and mark source-grounded workaround removals before further implementation |
+| OmniRoute coverage | Defer new direct work on covered search/fetch/API rerank operations; use one small bridge |
+| Specialist work | Build/harden operations OmniRoute does not provide: academic, hosted research MCP, GitHub and site map/crawl gaps |
+| Existing adapters | Preserve the checkpoint; retire redundant active paths only after equivalent bridge behavior is verified |
+| Multi-account | Research Engine owns specialist accounts; OmniRoute owns accounts for its supported operations |
+| Specialist selection | `priority`, `round_robin`, `quota_aware`; capability eligibility, cooldown, quota and shared limits apply |
+| Routing | Capability chosen by tool; ordered providers with `fanout|sequential`; no imported combo/policy engine |
+| Output | Ranked hits for search; source documents for reads; typed metadata/verification/graph records |
+| Merge | Conservative exact ID/URL dedup, plain RRF, optional rerank off by default |
+| Jobs | Persist inherently async specialist jobs; ordinary timeout returns partial results |
+| Admin | Minimal sqladmin: accounts/connect/test, latest health/quota, request/replay, routing/rerank settings |
+| Deployment | Single user/process, Python, SQLite WAL, loopback/tailnet, per-client bearer tokens |
+| Public hosting | Public MCP/admin ingress, client OAuth AS and `/mcp/compat` remain deferred |
+| Deferred | Excluded from the current queue; reopen only for the conditions in design §16 |
+| Acceptance | Distinguish code, fixture evidence and live validation; blocked checks remain pending |
 
-## Usage pattern
+## Account ownership
 
-The call pattern remains relevant; the older automatic rerank/enrichment and `get` language below were proposals,
-not v3 behavior (see [design.md §4](design.md#4-mcp-surface) and [§8](design.md#8-merge)).
+Direct research-specialist credentials, OAuth sessions, eligibility and selection live in the engine.
+Commodity credentials, account pools and same-provider balancing/failover live in OmniRoute.
+The bridge stores only its own service credential and selected upstream operation mapping.
+There is no mirrored commodity account database.
 
-- A working session = **many small calls**, not one big deep call.
-- Normal call: **quality over latency, 10–30 s acceptable** → wide fan-out, wait, fuse, rerank, enrich.
-- **Evidence handles** (stable canonical IDs) + **query/document cache** with TTL.
-  No cross-call "seen" suppression.
-- Response: **compact + expand** (top-k ~8–10: title, handle, snippet, signals, provenance summary;
-  details via read/get by handle).
+Multiple accounts must not become multiple independent provider votes in RRF.
+Shared limits apply across accounts in the same provider quota group.
+Unknown quota/reset data remains unknown; selection never assumes independent quotas.
 
-## Evidence signals (research further)
+## Reuse and engineering constraints
 
-Signals only; consumer interprets. Candidates: cross-provider agreement; scholarly
-(retraction/editorial, citations, Scite supporting/contrasting, venue, year, peer-reviewed vs
-preprint, OA); web (publish date, domain, source type, freshness); coverage/gaps report;
-full per-item provenance. Open: definitions, source per signal, effect on ranking.
+Reuse compatible upstream code and preserve notices. Do not copy a model router's abstractions
+because they already exist. Do not build a second control plane, generic plugin framework,
+distributed queue, React admin or future schema hooks.
 
-## Research tasks for the design doc
+Providers differ by capability and evidence semantics; they are not interchangeable models.
+Treat scope at operation level: Firecrawl search/fetch can bridge while site map/crawl stays direct.
+Technical limits and entitlement remain explicit; the owner assesses provider terms.
 
-1. Deep-read research-mcp + mcp-gateway: module-by-module keep/modify/drop map.
-2. FastMCP vs raw python-sdk for gateway, proxying, middleware, auth.
-3. OmniRoute/9router: UI components to copy; combo/quota/circuit-breaker logic to port; other reusable pieces.
-4. metamcp / mcp-omnisearch / exa & firecrawl MCP servers: patterns + best param defaults.
-5. Per provider: API/MCP tools, capabilities mapping, limits, pricing, ToS for programmatic/MCP-client use,
-   quota observability (how to detect RATE_LIMITED / EXHAUSTED / PLAN_BLOCKED).
-6. ChatGPT connector requirements (`search`/`fetch`) as of now.
-7. Signal definitions + canonicalization (DOI/arXiv/PMID/URL) + fusion design.
-8. Storage/job architecture; Cloudflare Tunnel + OAuth callback constraints.
-9. Credits/attribution section for README (research-mcp, mcp-gateway, OmniRoute, 9router, …).
+## Work and validation
 
-## Owner decisions after design review (2026-09-29)
-
-Historical v1 decisions, superseded where different by the pivot below and current
-[design.md](design.md): no engine-enforced ToS restrictions (current §14); candidate provider keys were Exa,
-Firecrawl, Tavily, Brave/Serper, Consensus API key, GitHub PAT, OpenAlex and S2; Scite REST and Jina keyless were
-also considered. The earlier tunnel/Caddy ingress and shared Infinity reranker are **not** v3 requirements.
-
-## Design review (2026-09-30)
-
-Owner review found v1's control plane larger than the workload (policy language, spend strategy, 3-scope state
-machine, breaker profiles, health scheduler, replay experimentation, durable distributed-style jobs, implicit
-enrichment, coverage analytics). The current design keeps provider abstraction and routing core, moves the rest to
-[Deferred](design.md#16-deferred-add-when-the-trigger-is-observed). `get_evidence` was removed and `SITE_INTERACT`
-deferred; `/mcp/compat` was subsequently deferred by the local-researcher pivot.
-
-## Pivot: server for local researchers (2026-09-30)
-
-Supersedes **all** earlier implementation choices above where they conflict; [design.md](design.md) v3 is the
-source of truth for routing, output, storage, deployment and phase exit criteria. The 2026-10-02 audit clarified
-bootstrap, typed outputs and an HTTPS-only upstream OAuth callback without adding router/control-plane machinery.
-
-| Topic | Decision |
-|---|---|
-| Consumers | Claude Code sessions and agentRT running on **other tailnet machines** (local researchers). ChatGPT/claude.ai dropped |
-| Server | This machine holds all provider OAuth tokens/API keys and runs the engine |
-| Transport | Daemon, MCP Streamable HTTP on port **8765** |
-| Network | **Tailscale** only: `100.66.213.111:8765` (+ `127.0.0.1:8765`). No tunnel, Caddy or public ingress |
-| Client auth | **Bearer token per client**, created/revoked in admin |
-| Providers | Engine calls providers itself (own keys/OAuth), not the claude.ai connectors |
-| Output | Tool results only; engine writes no evidence files for researchers |
-| Skeleton | **research-mcp** as base; from mcp-gateway only upstream OAuth client, token store, crypto, migrations |
-| Admin UI | **sqladmin** + custom actions (test, connect OAuth, reset, replay) |
-| Run | **Docker compose** on this machine |
-| Undermind CIMD | Client-metadata JSON on a small **public repo + GitHub Pages** (main repo stays private); the actual OAuth callback requires a tailnet-reachable **HTTPS** hostname and live upstream acceptance test |
-| Storage/admin | SQLite WAL via SQLAlchemy mapped models/sessions for sqladmin; reuse upstream OAuth client and crypto, not gateway client-facing OAuth AS or its legacy tables |
-| Jobs | Only inherently async capabilities, with ordered start failover and persisted upstream ref; ordinary deadline returns partial results, not a job |
-
-design.md v3 reflects this. No public `/mcp`/`/admin` ingress is implied by the public CIMD document.
+[cleanup.md](cleanup.md) lists observed shortcuts with required action and closure checks.
+[roadmap.md](roadmap.md) replaces the old docs-only P0–P4 plan.
+Detailed research/01–07 is historical evidence, not permission to restore rejected features.
+No code/live fixes are claimed by this documentation-only scope update.

@@ -1,5 +1,10 @@
 # 07 — Evidence model, canonicalization, dedup, fusion, rerank, signals
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research + design proposal (no code). Date: 2026-09-29.
 Scope: pipeline stages **Normalize → Canonicalize → Dedup → Rank Fusion → Optional Rerank → Enrich (signals) → compact response**,
 per `../requirements-notes.md` (quality over latency, stable handles, signals-not-judgements).

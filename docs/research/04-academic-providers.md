@@ -1,5 +1,10 @@
 # 04 — Academic Providers (Scite, Elicit, Undermind, Consensus, OpenAlex, Crossref, Semantic Scholar, arXiv)
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research, 2026-09-29. Scope is the academic capabilities (PAPER_*, CITATION_*, EDITORIAL_CHECK,
 SYSTEMATIC_REVIEW, DEEP_LITERATURE_SEARCH), plus short notes on Lune, alphaXiv, Valency and SciSpace.
 

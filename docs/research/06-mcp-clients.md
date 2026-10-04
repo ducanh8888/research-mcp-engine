@@ -1,5 +1,10 @@
 # 06 — MCP client requirements (ChatGPT, Claude.ai, Claude Code, custom agent runtime)
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research, as of 2026-09-29. Scope: what our self-hosted, single-user, OAuth-protected Python MCP server
 (~17 capability tools, behind Cloudflare Tunnel) must do to work well with each consumer.
 Legend: **[V]** verified in an official doc fetched on 2026-09-29 · **[C]** community or issue-tracker evidence only ·

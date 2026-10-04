@@ -1,5 +1,10 @@
 # 02 — mcp-gateway deep-read + FastMCP vs python-sdk
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research input for the design doc. Date: 2026-09-29.
 Sources read: `R0Wi/mcp-gateway` @ `59c1efd` (2026-09-23, "upgrade to FastMCP 4 (MCP SDK v2, 2026-07-28 protocol)");
 wheels `fastmcp==4.0.10`, `fastmcp-slim==4.0.10`, `fastmcp-tasks==4.0.10`, `mcp==2.2.0`, `mcp-types==2.2.0`, `httpx2==2.13.1`

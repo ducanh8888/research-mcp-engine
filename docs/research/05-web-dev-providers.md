@@ -1,5 +1,10 @@
 # 05 — Web & Developer Providers (Exa, Firecrawl, GitHub, Tavily, Perplexity, + Jina/Brave/Serper/Linkup/Parallel)
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research draft, 2026-09-29. Capabilities in scope: WEB_SEARCH, WEB_READ, NEWS_SEARCH, SITE_MAP,
 SITE_CRAWL, SITE_INTERACT, DEVELOPER_SEARCH, REPO_SEARCH, plus the places where web providers touch academic search.
 

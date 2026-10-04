@@ -1,5 +1,10 @@
 # 03 — OmniRoute & 9router: reuse analysis
 
+> Historical investigation, recorded before the specialist/OmniRoute bridge pivot.
+> Current authority: [design v4](../design.md), [roadmap](../roadmap.md) and
+> [cleanup](../cleanup.md). Recommendations, pricing, protocol and account observations
+> below are dated evidence, not current requirements or live validation.
+
 Status: research, 2026-09-29. Inputs: shallow clones (`--depth 1`)
 - `diegosouzapw/OmniRoute` @ `666ea59` (v3.8.52, TypeScript, Next.js 16, MIT, © 2026 diegosouzapw)
 - `decolua/9router` @ `f01fb90` (v0.5.91 app, plain JS ESM, Next.js 16, MIT, © 2024-2026 decolua and contributors)
