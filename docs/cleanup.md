@@ -119,4 +119,3 @@ storage and restart polling are required behavior and remain.
 
 A broad `except`, fallback or compatibility branch is not automatically a defect.
 The entries above identify the concrete semantics that must change or be verified.
-

@@ -74,4 +74,3 @@ a gateway gap is explicit pending work, not a silent fallback to frozen direct c
 [Design §16](design.md#16-deferred) defines reopen conditions. Deferred items are not subsequent
 automatic phases. Existing disabled experiments do not get schema/API hooks or new rollout work.
 Public exposure and `/mcp/compat` are absent from this private release plan.
-

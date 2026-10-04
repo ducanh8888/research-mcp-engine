@@ -51,4 +51,3 @@ Historical code references include `vvzvlad/research-mcp` @11f297d and
 [web-layer notice](src/research_engine/providers/web/LICENSE.research-mcp).
 Complete copied-code/license inventory is P0 work; reference to a repository is not a claim
 that its entire implementation was copied. OmniRoute is an upstream integration dependency.
-
