@@ -15,8 +15,9 @@ Design v1–v3 and superseded decisions remain in git history.
 
 One private MCP endpoint for search / retrieve / verify / merge / rank.
 
-Request → capability → provider → account → execute/fallback → normalize →
-conservative dedup → RRF for ranked lists → optional rerank → provenance + results.
+Request → capability → routed providers → account per provider → concurrent search →
+normalize with provenance → conservative exact dedup → plain RRF → enabled validated rerank.
+Other operations use the execution and aggregation contracts below.
 
 The consumer chooses the capability and interprets evidence. The engine does not classify
 query intent, generate hypotheses, judge evidence, select an automatic best-N source set,
@@ -89,7 +90,7 @@ Sixteen capability tools plus `get_job`; upstream tool names remain internal.
 |---|---|---|
 | `web_search`, `news_search` | fanout | ranked `items[]` |
 | `web_read`, `paper_read` | sequential | source `document`, optional next cursor |
-| `site_map` | sequential | `urls[]` |
+| `site_map` | fanout aggregation | `urls[]` |
 | `site_crawl` | sequential async start | job; completed URLs/documents |
 | `paper_search`, `paper_related` | fanout | ranked `items[]` |
 | `paper_metadata` | sequential per unresolved ID | `records[]`, `not_found[]`, per-ID coverage |
@@ -108,6 +109,9 @@ Ordinary results include `request_id`, `status: complete|partial` and
 `coverage: {ok, failed, skipped}`. Items retain canonical handle, URL, title,
 provider-supplied fields and provider/rank provenance. Bridged provenance names the actual
 upstream provider and OmniRoute transport; never count both as independent search lists.
+A failed, unavailable or timed-out participant in a configured fanout cohort makes the
+response partial even when a peer succeeds before the deadline. Retain every successful
+peer and report missing coverage; a successful zero-hit list is a valid completed call.
 
 Read output labels full source text versus abstract. Generated QA/report prose is not full
 text. Metadata/verification/graph records retain conflicting source assertions; RRF never
@@ -160,9 +164,11 @@ Bridge contract:
   Send the exact OmniRoute provider ID: Firecrawl search is `firecrawl`, DuckDuckGo is
   `duckduckgo-free`, fetch uses `jina-reader` or `tavily-search`. Virtual names are not API IDs.
 - Always specify the upstream provider (or `provider/model` for rerank). No automatic
-  cross-provider OmniRoute selection; the engine owns research fanout/fallback.
+  cross-provider OmniRoute selection; the engine gathers independent research evidence.
+  Covered commodity operations never retry frozen direct adapters on a bridge failure.
 - Verify requested versus returned provider. A hidden provider substitution is an error,
-  not another vote in RRF. Parameter/filter gaps stay explicit; no silent dropping.
+  not another vote in RRF. Direct/bridge aliases for the same actual provider/operation
+  cannot be independent evidence. Parameter/filter gaps stay explicit; no silent dropping.
 - Normalize responses and typed errors within the bridge. Gateway authentication failure
   affects the bridge connection; provider exhaustion is scoped to that virtual provider,
   not every provider sharing the OmniRoute credential.
@@ -181,20 +187,44 @@ credential availability. Undermind `read_pdfs` QA is not a `paper_read` source.
 
 ## 6. Routing
 
-One DB entry per capability: `mode: fanout|sequential` and an ordered provider list.
-Validate capability support and duplicate entries on save. Seed only explicitly approved
-routes for implemented adapters; registration alone does not append a provider to every route.
+One DB entry per capability keeps an ordered provider list and its valid execution mode.
+Seed only explicitly approved routes for implemented adapters; registration alone does
+not append a provider to a route. List order is stable configuration, not a search priority chain.
 
-Fanout calls available providers concurrently within one deadline. Sequential tries ordered
-providers until a usable result; batched metadata retries unresolved IDs. Async start is
-sequential and selects one provider/account. `job` is a lifecycle, not a routing mode.
+`web_search`, `news_search`, `paper_search`, `paper_related`, `developer_search` and
+`repo_search` require fanout. Execute every enabled, configured, semantically independent
+provider in the route concurrently within one shared request deadline. Do not stop after
+the first success, an empty success, a sufficient hit count or a high-ranked result.
+Count each actual upstream provider once per capability regardless of adapter, transport
+alias, hosted/direct interface or account. Known provider/operation mappings establish
+source identity, not extra votes; no independence scores or classifiers.
+Covered commodity operations use their explicit OmniRoute provider; gateway failure must
+not activate the frozen direct adapter. Specialist sources remain direct.
+
+`citation_verify`, `citation_graph` and `editorial_check` also fan out to all applicable
+configured providers and aggregate source assertions without RRF. `site_map` fans out
+and aggregates URLs. Sequential execution is limited to fetching the same source in
+`web_read`/`paper_read`, resolving only unresolved metadata IDs, or starting exactly
+one async job. Stop reads only at a usable source result; never resubmit an ambiguous start.
+`job` is a lifecycle, not a routing mode.
+
+Validate capability support, mode and actual-provider duplicates per capability at route save,
+bootstrap/upgrade and runtime. Correct legacy sequential search routes to fanout while
+preserving their selected providers, enablement, credentials and unrelated operator edits.
+Resolve direct/bridge duplicates to one explicit bridge entry for covered operations;
+preserve credential data and direct-only operation gaps.
 
 Validate consumer input before routing. Ordinary deadline defaults to 40 seconds, clamps
 to 5–50 seconds, cancels stragglers and returns partial coverage without creating a job.
-All failed/unavailable providers return `NO_PROVIDER_AVAILABLE`. A single upstream 404
-permits fallback; it does not establish global absence.
+All failed/unavailable providers return `NO_PROVIDER_AVAILABLE`. With a successful peer,
+a participant's error, unavailable account or timeout yields partial results and visible
+failed/unfinished coverage, never complete merely because the deadline was not reached.
+Disabled/unconfigured entries are visibly skipped outside the execution cohort.
+An upstream 404 affects that source; only reads and unresolved metadata may progress
+sequentially to another applicable source. It does not establish global absence.
 
-No nested chains, classifier, per-step policy language, spending strategy or policy version.
+No fallback architecture, provider chains, scoring policy, classifier, nested policy
+language, spending strategy or policy version.
 
 ## 7. Specialist multi-account
 
@@ -206,12 +236,16 @@ Target selection modes, configured per direct provider:
 
 | Mode | Selection |
 |---|---|
-| `priority` (default) | First eligible account by priority, stable ID tie-break; next eligible account on account failure |
+| `priority` (default) | First eligible account by priority, stable ID tie-break; next eligible account only on auth/rate/quota availability failure |
 | `round_robin` | Rotate eligible accounts within the best priority tier; fall back to lower tiers when needed |
 | `quota_aware` | Prefer usable accounts with comparable remaining-quota observations; unknown/stale/incomparable values fall back to priority |
 
 Filter disabled, invalid credentials, active cooldowns and blocked capabilities before
-selection. Select one account per provider per request; accounts are not separate RRF votes.
+selection. Produce at most one successful result list per provider per request; account
+retries do not create separate RRF votes. Retry another account only for classified auth,
+rate-limit or quota-exhaustion availability. Plan denial, bad input, target absence,
+transient transport errors and internal adapter faults do not walk the account pool;
+retain their scoped diagnostics and any applicable capability block.
 Recheck eligibility before every retry, including shared quota-group cooldown changes.
 Concurrent selection updates use a small in-process critical section; no durable scheduler.
 
@@ -237,14 +271,19 @@ Stable handles survive restart; aliases do not join conflicting identities.
 A scholarly hit missing strong IDs may get one exact normalized-title + year resolver lookup;
 ambiguous matches stay separate. Preserve source fields and provenance; no fuzzy evidence merge.
 
-Search-like results use one ranked list per actual provider and plain RRF:
-`score = Σ 1/(60 + rank)`. No account votes, independence map or second-stage fusion.
+Merge all successful independent search lists, retaining provider/rank provenance before
+conservative exact dedup. Search-like results use one ranked list per actual provider within a capability
+and plain RRF:
+`score = Σ 1/(60 + rank)`. Direct, bridged and hosted aliases of one actual provider
+contribute one list within a capability. No account votes, independence map or second-stage fusion.
 Graph/metadata/verification/editorial outputs aggregate source records without RRF.
 
-Optional rerank replaces the order of the top-N; failure preserves fused order with diagnostics.
+Optional rerank runs only when enabled and its output validates against the fused candidates.
+It replaces the order of the top-N; invalid output or failure preserves fused order with diagnostics.
 Cloud rerank uses OmniRoute; local Infinity/FastEmbed remains available. The baseline module
-and eight-case CPU benchmark exist, but the ordinary engine search path does not invoke rerank.
-Integration, secret ownership and representative evaluation remain roadmap work.
+and eight-case CPU benchmark exist. The current branch's ordinary-path integration and
+remaining live/evaluation acceptance are recorded in the roadmap; the benchmark alone
+does not validate provider coverage or rerank quality.
 
 No implicit enrichment or preference ranking. Existing disabled weighted/hierarchical RRF
 and fuzzy/version relationship helpers are historical experiments, not current runtime requirements.
@@ -252,7 +291,8 @@ and fuzzy/version relationship helpers are historical experiments, not current r
 ## 9. Async jobs
 
 Only site crawl, deep literature search and systematic review use durable jobs.
-Select/start sequentially; definite failure may try another account/provider.
+Select/start sequentially; another provider may be tried only after definite failure before
+upstream work was created. Account retries remain limited to §7 availability errors.
 Ambiguous start or poll failure never automatically starts duplicate upstream work.
 
 Persist provider, account, upstream ref, client-token owner and status/result immediately
@@ -266,6 +306,8 @@ start outcomes and reconcile explicitly; no exactly-once guarantee or distribute
 ## 10. Cache
 
 Query and source-document caches use TTL; cache only complete query results.
+Reduced-coverage fanout calls are partial and must not enter complete query cache.
+Invalidate older entries that were incorrectly marked complete when correcting this behavior.
 Partial calls re-attempt unfinished work. Read cache contains source text, not question answers.
 Fresh bypasses engine cache and supported upstream caches, with limitations exposed.
 
@@ -332,7 +374,7 @@ capabilities, APIs or dependency extras are created to reserve future work.
 | Public ingress, client OAuth AS, `/mcp/compat` | Owner needs a consumer outside loopback/tailnet |
 | `SITE_INTERACT` | Owner requests a concrete browser-action workflow |
 | Weighted/hierarchical RRF, fuzzy relationships, version linking | Representative evaluation/logs establish a need beyond exact dedup + plain RRF |
-| Nested route policy, breaker framework, spend model | Existing simple routing/account cooldowns demonstrably cannot meet a requirement |
+| Nested route policy, breaker framework, spend model | Excluded by the evidence-coverage directive; requires a new explicit owner scope decision |
 | Health scheduler, quota charts, coverage analytics | Explicit operational requirement with evidence from actual use |
 | Distributed workers, Postgres, multi-user abstractions | Deployment requires more than this single process/user |
 | Custom React admin | A required task cannot be completed through current sqladmin/actions |
