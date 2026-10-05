@@ -198,7 +198,7 @@ def mount_admin(
         async def on_model_change(self, data: dict[str, Any], model: Any, is_created: bool,
                                   request: Request) -> None:
             mode = data.pop("account_selection", "priority")
-            if mode not in SELECTION_MODES:
+            if not isinstance(mode, str) or mode not in SELECTION_MODES:
                 raise ValueError("Choose a supported account selection mode")
             if not isinstance(data.get("options"), dict):
                 raise ValueError("Provider options must be a JSON object")

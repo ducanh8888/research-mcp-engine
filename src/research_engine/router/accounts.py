@@ -44,7 +44,7 @@ class AccountChoice:
 def selection_mode(options: dict[str, Any] | None) -> str:
     """Reject bad saved config instead of silently spending through another mode."""
     mode = (options or {}).get("selection_mode", "priority")
-    if mode not in SELECTION_MODES:
+    if not isinstance(mode, str) or mode not in SELECTION_MODES:
         raise ValueError("Invalid provider selection_mode")
     return mode
 
