@@ -143,6 +143,15 @@ def test_snippets_are_compact_and_inputs_are_unmodified():
     assert len(merge_hits([source], limit=0).identities) == 1
 
 
+def test_bridge_transport_provenance_is_visible_without_raw_payload():
+    source = hit(provider="brave-search", raw={"transport": "omniroute", "token": "not-output"})
+    result = merge_hits([source]).items[0]["providers"][0]
+    assert result["p"] == "brave-search"
+    assert result["transport"] == "omniroute"
+    assert "raw" not in result
+    assert "token" not in str(result)
+
+
 def test_result_objects_and_empty_hits():
     @dataclass
     class Result:

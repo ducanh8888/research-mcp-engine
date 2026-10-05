@@ -217,6 +217,9 @@ def merge_hits(
             }
             if source["source_ids"] and source["source_ids"] != source["ids"]:
                 provenance["source_ids"] = source["source_ids"]
+            transport = (source.get("raw") or {}).get("transport")
+            if transport == "omniroute":
+                provenance["transport"] = transport
             if options.get("include_raw") and source.get("raw"):
                 provenance["raw"] = source["raw"]
             providers.append(provenance)
