@@ -24,7 +24,8 @@ BLOB_GRACE_S = 3600
 
 def cache_key(capability: str, args: dict[str, Any]) -> str:
     normalized = {k: v for k, v in args.items()
-                  if k not in {"fresh", "deadline_s", "wait_s"} and not k.startswith("_")}
+                  if k not in {"fresh", "deadline_s", "wait_s"}
+                  and (not k.startswith("_") or k == "_route_identity")}
     if isinstance(normalized.get("query"), str):
         normalized["query"] = " ".join(normalized["query"].split())
     payload = json.dumps([capability, normalized], sort_keys=True, separators=(",", ":"), ensure_ascii=False)

@@ -167,6 +167,18 @@ class Engine:
         ranked = await rerank(query, items, config, bridge=bridge, context=context)
         return ranked, diagnostics
 
+    def _route_identity(self, cap: Capability) -> str:
+        with self.db.session() as session:
+            route = session.get(Routing, cap.value)
+            if route is None:
+                return "missing"
+            providers = []
+            for name in route.providers:
+                row = session.get(ProviderRow, name)
+                providers.append((name, bool(row and row.enabled), row.options if row else None))
+            data = json.dumps([route.mode, providers], sort_keys=True, default=str)
+            return hashlib.sha256(data.encode()).hexdigest()
+
     def _route(self, cap: Capability) -> tuple[str, list[str]]:
         with self.db.session() as session:
             row = session.get(Routing, cap.value)
@@ -486,7 +498,8 @@ class Engine:
                             "coverage": {"ok": [cached["source"]], "failed": [], "skipped": []},
                             "document": self._page(cached, args.get("cursor"))}
         elif cap not in ASYNC_CAPABILITIES and not args.get("fresh"):
-            cached = await asyncio.to_thread(self.cache.get_query, cap.value, args)
+            cache_args = {**args, "_route_identity": await asyncio.to_thread(self._route_identity, cap)}
+            cached = await asyncio.to_thread(self.cache.get_query, cap.value, cache_args)
             if cached:
                 return {**cached, "request_id": request_id}
         mode, names = await asyncio.to_thread(self._route, cap)
@@ -586,7 +599,8 @@ class Engine:
                 await asyncio.to_thread(self.cache.put_document, cap.value, args["target"], document)
             envelope["document"] = self._page(document, args.get("cursor"))
         elif not read and envelope["status"] == "complete":
-            await asyncio.to_thread(self.cache.put_query, cap.value, args, envelope)
+            cache_args = {**args, "_route_identity": await asyncio.to_thread(self._route_identity, cap)}
+            await asyncio.to_thread(self.cache.put_query, cap.value, cache_args, envelope)
         return envelope
 
     async def replay(self, request_id: str) -> dict:

@@ -18,7 +18,7 @@ from research_engine.router.execute import Engine, ToolError
 from research_engine.router.requests import validate
 from research_engine.server.app import create_app
 from research_engine.server.schemas import Document, Hit, Result
-from research_engine.storage.db import Account, Attempt, Database, RequestRow, Routing, create_client_token
+from research_engine.storage.db import Account, Attempt, Database, ProviderRow, RequestRow, Routing, create_client_token
 from test_mcp_e2e import Runtime, make_settings, run_http_app
 
 
@@ -56,6 +56,30 @@ def engine_with(tmp_path: Path, providers, cap: Capability, *, accounts=1, setti
             providers=[provider.name for provider in providers]))
     db.close()
     return Engine(settings, providers=registry)
+
+
+async def test_changed_route_identity_bypasses_stale_query_without_deleting_history(tmp_path):
+    first = Stub("old_search", {Capability.WEB_SEARCH}, Result(hits=[Hit(
+        provider="old_search", title="Old", url="https://example.org/old")]))
+    second = Stub("new_search", {Capability.WEB_SEARCH}, Result(hits=[Hit(
+        provider="new_search", title="New", url="https://example.org/new")]))
+    engine = engine_with(tmp_path, [first, second], Capability.WEB_SEARCH)
+    try:
+        with engine.db.session() as session:
+            session.get(Routing, "web_search").providers = [first.name]
+        initial = await engine.execute("web_search", {"query": "same"})
+        assert initial["items"][0]["title"] == "Old"
+        with engine.db.session() as session:
+            session.get(Routing, "web_search").providers = [second.name]
+        updated = await engine.execute("web_search", {"query": "same"})
+        assert updated["items"][0]["title"] == "New"
+        assert len(first.calls) == len(second.calls) == 1
+        with engine.db.session() as session:
+            session.get(ProviderRow, second.name).enabled = False
+        with pytest.raises(ToolError):
+            await engine.execute("web_search", {"query": "same"})
+    finally:
+        await engine.stop()
 
 
 async def test_empty_read_fallback_and_valid_empty_search(tmp_path):
