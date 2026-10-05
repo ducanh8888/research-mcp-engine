@@ -1,0 +1,17 @@
+Third-party source attribution
+==============================
+
+Parts of the research provider HTTP/URL guards, web provider mappings and local
+reranking were adapted from vvzvlad/research-mcp at revision 11f297d (MIT,
+Copyright (c) 2026 vvzvlad). Its full MIT notice is retained at
+src/research_engine/providers/web/LICENSE.research-mcp.
+
+Configuration expansion, account-scoped encryption and upstream OAuth/migration
+patterns were adapted from R0Wi/mcp-gateway at revision 59c1efd. That project's
+pyproject.toml identifies its license as MIT; its source snapshot did not
+include a standalone LICENSE file or an identified copyright notice. Keep the
+original source locations in the corresponding module headers. This repository
+uses the gateway as a reference, not as an imported control plane.
+
+OmniRoute is called as a separately deployed service. No OmniRoute code was
+copied into the bridge. Dependencies retain their own package licenses.

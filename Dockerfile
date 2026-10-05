@@ -16,6 +16,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY scripts/mcp_smoke.py ./scripts/mcp_smoke.py
+COPY NOTICE ./NOTICE
 RUN groupadd --gid 1000 research \
     && useradd --uid 1000 --gid research --no-create-home research \
     && mkdir -p /app/data \
