@@ -1,0 +1,39 @@
+name: Checks
+
+on:
+  push:
+    branches: [research-specialists]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.17"
+          enable-cache: true
+      - name: Install frozen development dependencies
+        run: uv sync --locked --extra dev
+      - name: Lint
+        run: uv run --frozen ruff check src tests scripts
+      - name: Test (fixture-only, no live provider calls)
+        run: uv run --frozen pytest
+      - name: Verify whitespace
+        run: git diff --check
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build frozen runtime image
+        run: docker build --tag research-engine:ci .
+      - name: Check installed runtime matches lock, assets and CLI
+        run: |
+          docker run --rm --entrypoint python --mount type=bind,src="$PWD",dst=/checks,readonly research-engine:ci -c 'import tomllib, importlib.metadata as m; from pathlib import Path; import research_engine; lock=tomllib.load(open("/checks/uv.lock","rb")); locked={p["name"]:p["version"] for p in lock["package"]}; installed={d.metadata["Name"].lower().replace("_","-").replace(".","-"):d.version for d in m.distributions()}; assert all(locked.get(name)==version for name,version in installed.items()), [(name,version,locked.get(name)) for name,version in installed.items() if locked.get(name)!=version]; root=Path(research_engine.__file__).parent; assert (root/"storage/migrations/v0001_core.py").is_file(); assert (root/"providers/web/LICENSE.research-mcp").is_file()'
+          docker run --rm --entrypoint research-engine research-engine:ci --help
+          docker run --rm --entrypoint python research-engine:ci /app/scripts/mcp_smoke.py --help

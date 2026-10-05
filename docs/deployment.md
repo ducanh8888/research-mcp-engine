@@ -12,8 +12,10 @@ Do not invent a bridge environment variable or advertise it as configurable befo
 
 ## Prerequisites
 
-- Python 3.12 or later for local setup and the smoke client.
-- Docker with the Compose plugin for the container deployment.
+- Python 3.12 or later and uv for local setup and the smoke client.
+- Docker with the Compose plugin for the container deployment. The image installs
+  production dependencies from `uv.lock` using uv; Docker build requires access
+  to the pinned uv image and locked package artifacts.
 - A local tailnet interface owning `100.66.213.111` for the checked-in Compose
   bindings. Update that explicit binding if this host moves to another tailnet IP.
 - Provider credentials in the ignored `.env` file, or accounts created in admin.
@@ -30,9 +32,8 @@ without replacing an existing file:
 
 ```bash
 cp -n .env.example .env
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/research-engine init --config config.yaml
+uv sync --frozen --extra dev
+uv run --frozen research-engine init --config config.yaml
 ```
 
 `init` creates the runtime configuration, encryption key, admin session secret,
@@ -52,8 +53,14 @@ docker compose config --quiet
 docker compose build
 docker compose up -d
 docker compose ps
-.venv/bin/python scripts/mcp_smoke.py --token-file data/bootstrap.json
+uv run --frozen python scripts/mcp_smoke.py --token-file data/bootstrap.json
 ```
+
+The image uses the committed `uv.lock` at build time (`uv sync --frozen`,
+runtime-only, non-editable installation) and contains the CLI, packaged Python
+modules, and smoke client. A lock refresh is a separate reviewed change; do not regenerate it to work
+around a build failure. The smoke client runs locally against the container and
+only checks health and tool discovery unless `--tool` is explicitly given.
 
 Open `http://127.0.0.1:8765/admin` locally, or
 `http://100.66.213.111:8765/admin` from an allowed tailnet peer. Log in with the
@@ -64,13 +71,13 @@ use the admin interface.
 For a local process, use:
 
 ```bash
-.venv/bin/research-engine serve --config config.yaml
+uv run --frozen research-engine serve --config config.yaml
 ```
 
 The default local process binds `127.0.0.1`. A deliberate tailnet bind is:
 
 ```bash
-.venv/bin/research-engine serve --config config.yaml --host 100.66.213.111 --port 8765
+uv run --frozen research-engine serve --config config.yaml --host 100.66.213.111 --port 8765
 ```
 
 ## MCP smoke checks
@@ -83,7 +90,7 @@ Avoid putting tokens in URL query strings or command arguments.
 To perform an explicit live search:
 
 ```bash
-.venv/bin/python scripts/mcp_smoke.py \
+uv run --frozen python scripts/mcp_smoke.py \
   --url http://127.0.0.1:8765/mcp \
   --token-file data/bootstrap.json \
   --tool web_search \
@@ -93,7 +100,7 @@ To perform an explicit live search:
 Use a returned URL or handle as the read target:
 
 ```bash
-.venv/bin/python scripts/mcp_smoke.py \
+uv run --frozen python scripts/mcp_smoke.py \
   --token-file data/bootstrap.json \
   --tool web_read \
   --arguments '{"target":"https://modelcontextprotocol.io/"}'
@@ -140,7 +147,7 @@ online backup for the default paths is:
 
 ```bash
 mkdir -p data/backups
-.venv/bin/python - <<'PY'
+uv run --frozen python - <<'PY'
 import sqlite3
 with sqlite3.connect('data/engine.db') as source:
     with sqlite3.connect('data/backups/engine.db') as destination:
@@ -157,10 +164,10 @@ Run migration and upgrade as a single writer:
 
 ```bash
 docker compose stop
-.venv/bin/research-engine migrate --config config.yaml
+uv run --frozen research-engine migrate --config config.yaml
 docker compose build
 docker compose up -d
-.venv/bin/python scripts/mcp_smoke.py --token-file data/bootstrap.json
+uv run --frozen python scripts/mcp_smoke.py --token-file data/bootstrap.json
 ```
 
 Jobs record their owner, upstream reference, checkpoint, retry times, and partial
