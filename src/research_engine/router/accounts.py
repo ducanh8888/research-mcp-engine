@@ -227,20 +227,24 @@ class AccountSelector:
                     until = known_reset.astimezone(UTC)
                     reason = error.kind.value
                 elif seconds is not None and math.isfinite(seconds) and seconds >= 0:
-                    until = now + timedelta(seconds=min(seconds, 300))
+                    until = now + timedelta(seconds=seconds)
                     reason = f"retry_estimate:{error.kind.value}"
                 else:
                     until = now + timedelta(seconds=60 if error.kind == ErrorKind.RATE_LIMITED else 300)
                     reason = f"retry_estimate:{error.kind.value}"
-                if error.kind == ErrorKind.EXHAUSTED and observation is None:
+                if observation is None:
                     members = ([account] if not account.quota_group else list(session.scalars(
                         select(Account).where(Account.provider == account.provider,
                                               Account.quota_group == account.quota_group)
                     )))
                     for member in members:
-                        member.quota_remaining = 0
-                        member.quota_reset_at = known_reset
-                        member.quota_units = member.quota_scope = member.quota_observed_at = None
+                        if error.kind == ErrorKind.EXHAUSTED:
+                            member.quota_remaining = 0
+                            member.quota_units = member.quota_scope = member.quota_observed_at = None
+                        # Known resets are facts; estimated retry cooldowns
+                        # must never be mislabelled quota-reset timestamps.
+                        if known_reset is not None or error.kind == ErrorKind.EXHAUSTED:
+                            member.quota_reset_at = known_reset
                 self._cool_group(session, account, until, reason)
             elif error.kind == ErrorKind.TRANSIENT:
                 account.transient_failures += 1
