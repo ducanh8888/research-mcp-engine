@@ -11,7 +11,6 @@ import secrets
 import socket
 import subprocess
 
-import bcrypt
 from cryptography.fernet import Fernet
 from dotenv import dotenv_values
 import uvicorn
@@ -19,7 +18,7 @@ import yaml
 
 from research_engine.config import load_config
 from research_engine.providers.registry import build_registry, default_routes
-from research_engine.storage.crypto import Cipher, SecretStore
+from research_engine.storage.crypto import Cipher, SecretStore, hash_password
 from research_engine.storage.db import Account, ClientToken, Database, create_client_token
 from sqlalchemy import select
 
@@ -64,10 +63,10 @@ def import_environment(settings, db: Database, registry: dict) -> list[str]:
             account = session.scalar(select(Account).where(Account.provider == provider,
                                                            Account.label == "environment"))
             if account is None:
-                account = Account(provider=provider, label="environment", credential="valid", priority=0)
+                account = Account(provider=provider, label="environment", credential="ok", priority=0)
                 session.add(account)
                 session.flush()
-            account.credential = "valid"
+            account.credential = "ok"
             account_id = account.id
         store.set(account_id, {"api_key": key.strip()})
         imported.append(provider)
@@ -84,7 +83,7 @@ def initialize(path: Path) -> dict:
         _write_private(data / "encryption.key", Fernet.generate_key().decode())
         _write_private(data / "admin-session.key", secrets.token_urlsafe(48))
         password = secrets.token_urlsafe(24)
-        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        hashed = hash_password(password)
         origins = ["http://127.0.0.1:8765", "http://localhost:8765"]
         tailnet = _tailnet_ip()
         if tailnet:

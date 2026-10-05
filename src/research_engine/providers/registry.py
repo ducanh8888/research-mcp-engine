@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-import importlib
-
 from research_engine.providers.base import ASYNC_CAPABILITIES, Capability, Provider
 
 
 def build_registry() -> dict[str, Provider]:
+    from research_engine.providers import scholar, web
+    from research_engine.providers.dev import github
+
     registry: dict[str, Provider] = {}
-    for suffix in ("web", "dev", "scholar", "mcp.adapters"):
-        name = f"research_engine.providers.{suffix}"
-        try:
-            module = importlib.import_module(name)
-        except ModuleNotFoundError as exc:
-            if exc.name != name:
-                raise
-            continue
-        for entry in getattr(module, "PROVIDERS", []):
+    for module in (web, github, scholar):
+        for entry in module.PROVIDERS:
             provider = entry() if isinstance(entry, type) else entry
             if provider.name in registry:
                 raise ValueError(f"Duplicate provider name: {provider.name}")
@@ -49,7 +43,6 @@ def default_routes(registry: dict[str, Provider]) -> dict[str, dict]:
     for cap in Capability:
         compatible = [name for name, provider in registry.items() if cap in provider.capabilities]
         ordered = [name for name in ORDER.get(cap.value, []) if name in compatible]
-        ordered.extend(name for name in compatible if name not in ordered)
         if ordered:
             routes[cap.value] = {"mode": "sequential" if cap in SEQUENTIAL else "fanout", "providers": ordered}
     return routes

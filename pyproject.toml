@@ -20,8 +20,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=9,<10", "pytest-asyncio>=1,<2", "respx>=0.22,<1", "ruff>=0.13,<1"]
 local-rerank = ["fastembed>=0.7,<1"]
-postgres = ["psycopg[binary]>=3,<4"]
-browser = ["playwright>=1.55,<2"]
 
 [project.scripts]
 research-engine = "research_engine.cli:main"

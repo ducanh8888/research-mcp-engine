@@ -30,7 +30,6 @@ class Capability(StrEnum):
     DEEP_LITERATURE_SEARCH = "deep_literature_search"
     DEVELOPER_SEARCH = "developer_search"
     REPO_SEARCH = "repo_search"
-    SITE_INTERACT = "site_interact"
 
 
 ASYNC_CAPABILITIES = frozenset({Capability.SITE_CRAWL, Capability.SYSTEMATIC_REVIEW,
