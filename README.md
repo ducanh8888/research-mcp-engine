@@ -4,9 +4,10 @@ Private MCP for research retrieval, verification, conservative merge and ranking
 Current code baseline: `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`.
 `main` is frozen; current work is on `research-specialists`.
 
-The repository has runtime, provider, admin, auth, storage, jobs/cache/merge code and fixtures.
-The OmniRoute bridge and normalized hosted-MCP adapters are still pending.
-No end-to-end private-release acceptance is claimed.
+The branch includes a running private MCP, an explicit-provider OmniRoute bridge,
+academic/REST specialists, and guarded Scite/Elicit hosted search adapters.
+Fixture, local deployment and selected live-provider checks passed; full private-release
+acceptance remains blocked on eligible hosted accounts and actual remote clients.
 
 ## Current direction
 
@@ -32,13 +33,12 @@ bridge cutover. Public ingress and historical Deferred machinery are outside the
 
 ## Local setup
 
-Python ≥3.12:
+Python ≥3.12 with uv:
 
 ```bash
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/research-engine init --config config.yaml
-.venv/bin/research-engine serve --config config.yaml
+uv sync --frozen --extra dev
+uv run --frozen research-engine init --config config.yaml
+uv run --frozen research-engine serve --config config.yaml
 ```
 
 Bootstrap secrets are written to ignored private runtime files. Follow the deployment guide
@@ -50,5 +50,6 @@ For development with uv, use the frozen-lock commands in [AGENTS.md](AGENTS.md).
 Historical code references include `vvzvlad/research-mcp` @11f297d and
 `R0Wi/mcp-gateway` @59c1efd. See the existing
 [web-layer notice](src/research_engine/providers/web/LICENSE.research-mcp).
-Complete copied-code/license inventory is P0 work; reference to a repository is not a claim
-that its entire implementation was copied. OmniRoute is an upstream integration dependency.
+The [top-level notice](NOTICE) records the copied-code/source-reference boundary;
+reference to a repository is not a claim its entire implementation was copied.
+OmniRoute is an upstream integration dependency.

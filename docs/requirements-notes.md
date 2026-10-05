@@ -1,6 +1,6 @@
 # Research Engine — Requirements Notes
 
-Current owner decisions, updated 2026-10-05.
+Current owner decisions, updated 2026-10-06.
 [design.md](design.md) defines runtime contracts; [roadmap.md](roadmap.md) defines the work queue.
 Superseded requirement tables remain in git history, not in the active specification.
 
@@ -61,4 +61,7 @@ Technical limits and entitlement remain explicit; the owner assesses provider te
 [code-audit.md](code-audit.md) records reproduced/static findings and verification limits.
 [roadmap.md](roadmap.md) replaces the old docs-only P0–P4 plan.
 Detailed research/01–07 is historical evidence, not permission to restore rejected features.
-No code/live fixes are claimed by this documentation-only scope update.
+The original scope decision was documentation-only; subsequent changes on
+`research-specialists` implemented and checked selected code/live operations.
+[Roadmap](roadmap.md#implementation-and-acceptance-snapshot-2026-10-06) distinguishes
+verified work from external acceptance blockers.

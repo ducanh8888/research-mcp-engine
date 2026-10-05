@@ -1,6 +1,6 @@
 # Research Engine — Roadmap
 
-Updated 2026-10-05. Baseline: `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`.
+Updated 2026-10-06. Baseline: `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`.
 `main` is frozen; implementation continues on `research-specialists`.
 This replaces the old P0–P4 plan. No phase is declared accepted from source inspection alone.
 
@@ -11,18 +11,43 @@ This replaces the old P0–P4 plan. No phase is declared accepted from source in
 | Runtime/admin/auth/storage | Source, migrations, Docker/Compose and auth/MCP fixtures exist | Fresh install, container and actual tailnet clients pending |
 | Commodity web/dev | Exa, Firecrawl, Tavily, Brave, Serper, Jina, DuckDuckGo, trafilatura and GitHub code/fixtures exist | Covered operations move to bridge; no new direct adapter work |
 | Open/REST specialist | OpenAlex, Crossref, S2, arXiv, Scite REST, Consensus API, Elicit API code/fixtures exist | Harden and live-check existing work; do not rebuild it |
-| Hosted MCP | Client/OAuth infrastructure exists; `providers/mcp/adapters.py` absent | Scite/Elicit/Undermind normalized adapters pending |
+| Hosted MCP | At baseline client/OAuth infrastructure existed; normalized adapters were absent | Current Scite/Elicit search adapters are guarded; eligible live calls and Undermind schemas pending |
 | Multi-account | N accounts, priority failover, cooldown/blocks/quota fields exist | Round-robin, quota-aware and shared-state correctness pending |
-| Jobs/cache/merge | Implementations and deterministic fixtures exist | Review actual contracts, restart and integration acceptance pending |
-| Rerank | Backends/tests and `benchmarks/results/local_cpu.json` exist | Ordinary search path does not call rerank; integration pending; default off |
+| Jobs/cache/merge | Implementations and deterministic fixtures existed | Firecrawl crawl completed after restart; cache/merge fixtures pass, broader live/client checks pending |
+| Rerank | Baseline backends/tests and `benchmarks/results/local_cpu.json` existed | Current branch routes optional API rerank through one encrypted OmniRoute connection; local backends remain, default off |
 | Experimental Deferred code | Disabled fusion/relationship helpers and unused dependency hooks exist | Outside acceptance; no expansion based on code presence |
-| OmniRoute bridge | Absent | P1 |
+| OmniRoute bridge | Absent at baseline | Explicit provider search/fetch/rerank bridge now implemented; per-operation live parity still pending |
 
 The CPU artifact records eight authored queries with six candidates each. It is a recorded
 local execution, not representative research evaluation or a newly rerun result.
 The extended [code audit](code-audit.md) found additional contract/state/lifecycle defects
-and reproduced eight behaviors with isolated original-source probes. It did not execute
-the full application suite or live provider calls. All cleanup items remain open.
+and reproduced eight behaviors with isolated original-source probes. That baseline
+had no full suite or live evidence. The current snapshot below supersedes its
+status assertions without rewriting the historical audit.
+
+## Implementation and acceptance snapshot (2026-10-06)
+
+Implementation commits on `research-specialists` now cover the core correctness,
+versioned migrations, specialist account selector, locked container, guarded hosted
+search adapters, explicit OmniRoute search/read bridge and ordinary-path optional
+rerank. `uv run --frozen pytest -q`: **352 passed**; Ruff and whitespace checks passed.
+The container is healthy on loopback/tailnet and real MCP calls to available
+OmniRoute, open academic, GitHub and Firecrawl operations succeeded. See the
+[deployment record](deployment.md#validation-record-2026-10-06) for the precise
+observations. None of these facts alone accepts P0–P5 in full.
+
+| Phase | Implemented and checked | Exit criteria still pending |
+|---|---|---|
+| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs; frozen suite/container pass | Exhaustive live deadline/error fault injection |
+| P0.2 | Explicit catalog, stable credentials, account Test separation, request-bound limiter, nondestructive route-aware query keys, cache/blob maintenance | C03 concurrent OAuth edge cases; historical request/job retention approval; live admin route/Reset check |
+| P1 | One encrypted OmniRoute connection, explicit search/fetch/rerank; live DuckDuckGo/Exa search and Jina read | Brave/Serper upstream keys absent; upstream multi-account and provider quota failover not observable with API-scoped credential; fresh cache bypass unsupported |
+| P2 | Priority/round-robin/quota-aware fixtures, shared cooldown and persistent observations, admin mode | Two real specialist accounts with actual auth/rate/plan fallback |
+| P3 | Academic/REST/GitHub semantics, conservative graph merging, live metadata/search/repo/map/crawl | Multi-seed/claim live coverage and paid Scite/Elicit/Consensus entitlements pending |
+| P4 | Guarded Scite/Elicit hosted paper search and SDK fixtures; one Firecrawl job completed across restart | Undermind authenticated schemas, eligible OAuth/tool calls, HTTPS callback, live async review/deep jobs and independent owner/cancel checks pending |
+| P5 | Locked container, auth rejection, MCP discovery/search/read/jobs on local/tailnet bind, optional rerank API check; remains default off | Independent tailnet peer, actual Claude Code/agentRT clients, off-tailnet denial, live MCP rerank toggle (setting change denied), representative rerank evaluation |
+
+No phase is marked fully accepted while its stated live/client criteria remain
+pending. These blockers do not prevent independently verified operations from running.
 
 ## Work order
 

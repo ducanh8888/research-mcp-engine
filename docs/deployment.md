@@ -1,14 +1,16 @@
 # Private deployment and validation
 
-This guide records the baseline CLI/Compose path and follows [design v4](design.md).
-Current work and acceptance are in [roadmap.md](roadmap.md). The baseline implements
-one process, SQLite WAL, encrypted secrets, handles/jobs, MCP `/mcp` and sqladmin
-`/admin`; application/container/live acceptance is not established by this documentation pass.
+This guide follows [design v4](design.md); phase acceptance is tracked in
+[roadmap.md](roadmap.md). The current `research-specialists` branch runs one
+process with SQLite WAL, encrypted secrets, handles/jobs, MCP `/mcp` and sqladmin
+`/admin`. It implements an explicit-provider OmniRoute bridge and direct specialist
+gaps. Some live provider and remote-client checks remain pending.
 
-The OmniRoute bridge is not implemented at the frozen checkpoint. Commodity keys
-below apply to existing direct adapters only; after verified cutover, manage those
-keys/accounts in OmniRoute and only the bridge service credential in the engine.
-Do not invent a bridge environment variable or advertise it as configurable before it ships.
+Set `OMNI_ROUTE_API_URL` to the gateway's `/v1` or `/api/v1` root and
+`OMNI_ROUTE_API_KEY` in the ignored `.env` before `init` or `import-env`. Import
+stores one encrypted `omniroute` connection account, not commodity account
+copies. Manage provider keys and account pools for search/fetch/API rerank in
+OmniRoute. Operator-edited connection options are not overwritten by import.
 
 ## Prerequisites
 
@@ -175,30 +177,23 @@ result. A restart should recover eligible jobs. A previously cancelled job shoul
 stay cancelled. Verify job recovery with the deterministic tests and relevant live
 provider checks before relying on an upstream job's recovery behavior.
 
-## Validation record
+## Validation record (2026-10-06)
 
-The first two entries are prior implementation reports retained for context; they
-were not rerun in the 2026-10-05 documentation pass. No command output from that
-pass establishes deployment acceptance.
+Commands below ran on this host with Python 3.12 and the committed lock. The
+private `data/`, `config.yaml` and `.env` are not committed. A local tailnet URL
+request is not an independent peer check; fixtures are not live entitlements.
 
-Update this table with commands actually executed in the deployment environment.
-Fixture tests verify local behavior and do not establish hosted-provider or remote
-client compatibility.
-
-| Check | Reported baseline validation / remaining check |
+| Check | Observed result |
 |---|---|
-| Compose syntax | `docker compose config --quiet` passed locally |
-| Smoke client CLI | `scripts/mcp_smoke.py --help` passed in Python 3.12 with FastMCP 4.0.10 |
-| Container build and health | Pending implementation integration |
-| HTTP MCP discovery and calls | Pending implementation integration |
-| Missing/revoked tokens and bad Origin/Host | Pending HTTP tests |
-| Failover and restart handle read | Pending HTTP tests |
-| Live REST providers | See separately recorded live checks; not implied by fixture results |
-| Hosted MCP initialize/list/call and OAuth refresh | Pending eligible account checks |
-| Another tailnet peer: discovery and calls | Pending reachable peer and private token |
-| Claude Code and agentRT remote MCP | Pending actual client execution; unavailable agentRT stays pending |
-| Off-tailnet port denial | Pending external network check |
+| Lock, lint, fixtures | `uv sync --frozen --extra dev`, `uv lock --check`, `uv run --frozen pytest -q` (352 passed, dependency deprecation warnings), `uv run --frozen ruff check src tests scripts`, `git diff --check` passed after the redaction change |
+| Container and private HTTP | `docker compose config --quiet`, `docker compose build`, `docker compose up -d`, `docker compose ps`: healthy on loopback and `100.66.213.111`. Locked runtime package versions match FastMCP 4.0.10, MCP 2.3.0, SQLAlchemy 2.1.3, HTTPX 0.28.1; image contains attribution notice |
+| MCP discovery/auth | `scripts/mcp_smoke.py --token-file data/bootstrap.json` initialized/listed 17 tools; direct HTTP absent/invalid bearer returned 401; fixture tests cover revoked token, Origin and Host rejection |
+| OmniRoute | Installed local container package 3.8.51; private service URL configured from existing `.env`. Authenticated `/v1/search` catalog lists 20 IDs, not account entitlements. Explicit duckduckgo-free and exa-search live MCP search returned results with upstream provider and transport provenance. Brave/Serper requests returned HTTP 400 no configured upstream credential. Jina Reader live `web_read` returned source text/handle; provider mismatch, 401/429/quota/cache semantics covered in fixtures, not live account balancing |
+| Direct specialists | Live MCP paper search succeeded with OpenAlex, Crossref and arXiv on a later fresh retry; S2 returned 429. Crossref resolved a DOI through `paper_metadata`, GitHub `repo_search` succeeded, Firecrawl `site_map` returned two URLs |
+| Jobs/restart | One bounded Firecrawl `site_crawl` started, container restarted and `get_job` returned completed persisted URLs/documents. Ownership/cancel/unknown-start covered in fixtures, not live second-client check |
+| Rerank | OmniRoute Jina API rerank returned validated rankings using existing key; engine ordinary-search wiring and default-off verified in fixtures and local config. Enabling rerank on the live service was denied, so live MCP rerank remains pending. Local CPU evidence remains the recorded eight-case artifact, not a representative evaluation |
+| Hosted OAuth/MCP | Scite/Elicit normalized search fixtures and locked SDK OAuth/concurrency fixtures pass; eligible authenticated tool schemas/calls, HTTPS callback/CIMD and Undermind remain pending |
+| Clients and network | MCP calls to the local tailnet bind succeeded; independent peer, actual Claude Code/agentRT remote client and off-tailnet denial remain unverified. A Claude Code CLI agent run without per-action approval was denied; do not retry it indirectly |
 
-The [definition of done](roadmap.md#definition-of-done) requires relevant phase
-exit criteria, including actual remote client checks. A local fixture pass alone
-does not establish private-release acceptance.
+See [roadmap.md](roadmap.md) for acceptance and [cleanup.md](cleanup.md) for
+remaining closure criteria. Do not treat pending remote/client/hosted checks as PASS.

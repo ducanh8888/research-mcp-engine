@@ -128,8 +128,13 @@ Retirement follows equivalent-operation validation and route migration, not dele
 
 OmniRoute source was inspected at
 [`fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b`](https://github.com/diegosouzapw/OmniRoute/tree/fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b).
-Its `package.json` says 3.8.51; this is source inspection, not verification of an installed
-3.8.52 release. P1 must inspect and test the owner's actual OmniRoute instance.
+Its `package.json` says 3.8.51. On 2026-10-06 the running local `omniroute`
+container's `/app/package.json` also reported **3.8.51**; this verifies that
+installed package, not a purported 3.8.52 release. The existing API-scoped key
+can call `/v1/search`, `/v1/web/fetch` and `/v1/rerank` through the configured
+private URL but receives 403 on account/provider management endpoints. Therefore
+its provider catalog and successful calls do not establish the configured account
+inventory or same-provider failover.
 
 | Operation | Ownership |
 |---|---|

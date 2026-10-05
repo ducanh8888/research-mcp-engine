@@ -1,7 +1,10 @@
 # Required cleanup
 
 Source-reviewed at `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`, extended 2026-10-05.
-All checkboxes below remain open. This pass marks code work; no fix is implemented.
+Baseline descriptions below are historical observations. Checked items are closed by
+implementation and the cited fixture/live evidence summarized in the
+[roadmap snapshot](roadmap.md#implementation-and-acceptance-snapshot-2026-10-06).
+Unchecked items remain open or only partially verified; phase acceptance is separate.
 [Code audit](code-audit.md) separates eight isolated source reproductions from static findings
 and records environment limits. Phase ownership and priority are in [roadmap.md](roadmap.md).
 
@@ -265,6 +268,30 @@ storage and restart polling are required behavior and remain.
   Close per migrated operation with live parity, correct provenance/filter/error behavior,
   upstream multi-account checks and no mirrored commodity credential store.
   Local rerank wiring/default-off behavior is finalized in P5.
+
+## Status and remaining closure work (2026-10-06)
+
+**Verified locally with real ORM/HTTP fixtures and frozen checks:** C01 (explicit
+imports), C02 (locked SDK), C04–C06 (shared account state/Test), C07 (route-key
+cache correctness without deleting historical rows), C08–C09, C11–C16,
+C18–C21, C23–C26, C28–C29 and C31–C32. Baseline defect descriptions above
+remain for auditability; they are not assertions about current code. C22 response
+bounds and ordinary deadline clamp pass fixtures, but total DB/merge wall-clock
+deadline coverage remains incomplete, so C22 stays open. C17 scholarly related
+modes, citation resolver and graph handling pass adapter fixtures, but public
+multi-seed/ambiguity integration is not exhaustively checked, so it stays open.
+
+**Open:** C03 needs stale concurrent 401/full reauthorization and force-connect
+refresh-race evidence on eligible hosted accounts. C10 is operation-by-operation:
+OmniRoute DuckDuckGo/Exa search and Jina read worked live, API rerank helper
+worked live and its ordinary path passed fixtures, but Brave/Serper upstream
+accounts are unconfigured; no upstream account-pool failover or filter parity
+was verified. Retained direct commodity modules/routes and credentials must
+not be removed without each operation's cutover checks. C27 has synthetic
+call/Test and job poll/cancel redaction fixtures; complete log/admin/OAuth
+failure injection is pending. C30 prunes cache/orphan blobs safely but only
+reports aged request/job rows: historical row deletion was denied pending
+an explicitly authorized retention policy. No deletion is attempted.
 
 ## Required retained behavior
 
