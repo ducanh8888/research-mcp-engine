@@ -17,6 +17,9 @@ from research_engine.server.schemas import Hit, Result
 from research_engine.storage.db import Account, ClientToken, Database, Job, create_client_token
 
 
+SECRET = "sensitive-account-oauth-token"
+
+
 class FakeProvider(Provider):
     name = "async_fixture"
     capabilities = frozenset({Capability.SITE_CRAWL})
@@ -229,7 +232,7 @@ def test_permanent_poll_error_is_terminal(state, kind):
             job = await state.create(runner)
             output = await runner.get(job.job_id, state.owner, wait_s=0.5)
             assert output.status == "failed"
-            assert output.last_error == f"{kind.value}: permanent failure"
+            assert output.last_error == f"{kind.value}: Upstream polling failed"
             assert output.result is None
             assert len(state.provider.polls) == 1
         finally:
@@ -248,7 +251,7 @@ def test_upstream_terminal_status_is_saved(state, status):
             job = await state.create(runner)
             output = await runner.get(job.job_id, state.owner, wait_s=0.5)
             assert output.status == status
-            assert output.last_error == "upstream terminal state"
+            assert output.last_error == ("Upstream job failed" if status == "failed" else None)
             with state.db.session() as session:
                 row = session.get(Job, job.job_id)
                 assert row.status == status
@@ -530,6 +533,115 @@ def test_unknown_cancellation_can_be_retried_after_runner_restart(state):
             assert retried["cancelled_upstream"] is True
             assert state.provider.cancellations == ["saved-upstream-reference"] * 2
             assert state.provider.polls == []
+        finally:
+            await restarted.stop()
+
+    asyncio.run(scenario())
+
+
+def test_slow_storage_does_not_block_other_requests(state):
+    async def scenario():
+        runner = state.runner()
+        started = asyncio.Event()
+        release = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        original = runner._insert_job
+
+        def delayed(*args):
+            loop.call_soon_threadsafe(started.set)
+            # This simulates a slow synchronous DB transaction on a worker.
+            while not release.is_set():
+                time.sleep(0.005)
+            return original(*args)
+
+        runner._insert_job = delayed
+        creating = asyncio.create_task(state.create(runner))
+        try:
+            await asyncio.wait_for(started.wait(), 0.5)
+            # An unrelated MCP coroutine remains responsive while the DB stalls.
+            await asyncio.wait_for(asyncio.sleep(0.01), 0.1)
+            assert not creating.done()
+        finally:
+            release.set()
+            await creating
+
+    asyncio.run(scenario())
+
+
+def test_poll_and_cancel_failures_never_store_or_return_secrets(state, caplog):
+    async def scenario():
+        state.provider.updates.append(ProviderError(
+            ErrorKind.AUTH, f"failed at https://host/?access_token={SECRET} / {SECRET}",
+        ))
+        runner = state.runner()
+        await runner.start()
+        try:
+            job = await state.create(runner)
+            failed = await runner.get(job.job_id, state.owner, wait_s=0.5)
+            assert failed.status == "failed"
+            assert failed.last_error == "auth: Upstream polling failed"
+            with state.db.session() as session:
+                assert session.get(Job, job.job_id).last_error == failed.last_error
+            state.provider.cancel_response = ProviderError(ErrorKind.AUTH, SECRET)
+            other = await state.create(runner)
+            cancelled = await runner.cancel(other.job_id)
+            assert cancelled["last_error"] == "auth: Upstream cancellation failed"
+            assert (await runner.get(other.job_id, state.owner)).last_error == cancelled["last_error"]
+            with state.db.session() as session:
+                assert session.get(Job, other.job_id).last_error == cancelled["last_error"]
+            assert SECRET not in caplog.text
+        finally:
+            await runner.stop()
+
+    asyncio.run(scenario())
+
+
+def test_old_secret_bearing_error_is_redacted_on_get_and_cancel(state):
+    async def scenario():
+        runner = state.runner()
+        job = await state.create(runner)
+        with state.db.session() as session:
+            row = session.get(Job, job.job_id)
+            row.status = "failed"
+            row.last_error = f"auth: https://upstream/?token={SECRET}"
+        assert (await runner.get(job.job_id, state.owner)).last_error == "auth: Upstream job error"
+        assert (await runner.cancel(job.job_id))["last_error"] == "auth: Upstream job error"
+
+    asyncio.run(scenario())
+
+
+def test_unknown_start_is_owned_and_never_resubmitted_on_restart(state):
+    async def scenario():
+        runner = state.runner()
+        unknown = await runner.record_unknown_start(
+            Capability.SITE_CRAWL, {"url": "https://example.org"},
+            state.provider.name, state.account, state.owner,
+        )
+        assert unknown.status == "failed"
+        assert "manual reconciliation" in unknown.last_error
+        with pytest.raises(PermissionError):
+            await runner.get(unknown.job_id, state.other)
+        assert (await runner.cancel(unknown.job_id))["status"] == "failed"
+        await runner.start()
+        await asyncio.sleep(0.03)
+        assert state.provider.starts == 0
+        assert state.provider.polls == state.provider.cancellations == []
+        await runner.stop()
+        restarted = state.runner()
+        await restarted.start()
+        try:
+            assert (await restarted.get(unknown.job_id, state.owner)).status == "failed"
+            assert state.provider.polls == []
+            state.provider.updates.append(JobUpdate("completed", Result(urls=["https://example.org/known"])))
+            running = await restarted.reconcile_unknown_start(unknown.job_id, "recovered-ref")
+            assert running.status == "running"
+            with pytest.raises(ValueError, match="Only an unknown start"):
+                await restarted.reconcile_unknown_start(unknown.job_id, "another-ref")
+            completed = await restarted.get(unknown.job_id, state.owner, wait_s=0.5)
+            assert completed.status == "completed"
+            assert completed.result["urls"] == ["https://example.org/known"]
+            assert state.provider.polls == [("recovered-ref", state.account)]
+            assert state.provider.starts == 0
         finally:
             await restarted.stop()
 

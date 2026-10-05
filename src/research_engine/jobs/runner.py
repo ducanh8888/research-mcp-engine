@@ -1,7 +1,7 @@
 """Persist and poll upstream jobs in one process without launching work again.
 
-Routing owns upstream start and fallback. This module only accepts a reference
-that has already been obtained and resumes that same provider/account on restart.
+Routing owns upstream start and fallback. This module accepts a recovered reference,
+or records an unknown start for explicit reconciliation without polling or restarting it.
 """
 
 from __future__ import annotations
@@ -10,9 +10,11 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import timedelta, timezone
 from typing import Any
 
@@ -37,6 +39,32 @@ ContextFactory = Callable[[str, int, float], Awaitable[CallContext]]
 ResultFinalizer = Callable[[Capability, Result], Awaitable[dict[str, Any]]]
 
 
+@dataclass(frozen=True)
+class _JobState:
+    """Copy scalar fields before closing a worker-thread SQLAlchemy session."""
+
+    id: str
+    capability: str
+    provider: str
+    account_id: int
+    upstream_job_ref: str
+    client_token_id: int | None
+    status: str
+    updated_at: Any
+    poll_after_s: float
+    result: dict[str, Any] | None
+    last_error: str | None
+    cancelled_upstream: bool | None
+
+    @classmethod
+    def from_row(cls, row: Job) -> _JobState:
+        return cls(
+            row.id, row.capability, row.provider, row.account_id, row.upstream_job_ref,
+            row.client_token_id, row.status, row.updated_at, row.poll_after_s,
+            deepcopy(row.result), row.last_error, row.cancelled_upstream,
+        )
+
+
 def _interval(value: Any, default: float = 15) -> float:
     """Keep malformed upstream retry hints from spinning or wedging a task."""
     try:
@@ -46,6 +74,41 @@ def _interval(value: Any, default: float = 15) -> float:
     if not math.isfinite(interval) or interval < 0:
         return default
     return max(0.01, min(interval, 86400))
+
+
+# Provider messages, including errors returned by poll/cancel, are untrusted. Only
+# locally authored text is stored; never interpolate exception messages, URLs or
+# account credentials. Normalize old persisted errors on read as well.
+_SAFE_ERRORS = frozenset({
+    "Upstream start outcome is unknown; manual reconciliation required",
+    "Missing upstream job reference; manual reconciliation required",
+    "Persisted job provider is unavailable",
+    "Invalid upstream job update",
+    "Invalid upstream job error",
+    "Invalid upstream job status",
+    "Upstream job failed",
+    "Upstream job reported an error",
+    "Provider unavailable for upstream cancellation",
+    "Invalid upstream cancellation response",
+})
+_ERROR_KINDS = frozenset(kind.value for kind in ErrorKind)
+_LOCAL_ERROR = re.compile(
+    r"^(?:Upstream polling failed|Upstream polling temporarily unavailable|"
+    r"Upstream cancellation failed|Job result finalization failed) \([A-Za-z_][A-Za-z_0-9]*\)$"
+)
+
+
+def _public_error(error: str | None) -> str | None:
+    if error is None:
+        return None
+    if error in _SAFE_ERRORS or _LOCAL_ERROR.fullmatch(error):
+        return error
+    kind, separator, detail = error.partition(": ")
+    if separator and kind in _ERROR_KINDS:
+        if detail in {"Upstream polling failed", "Upstream cancellation failed"}:
+            return error
+        return f"{kind}: Upstream job error"
+    return "Upstream job error"
 
 
 class JobRunner:
@@ -77,8 +140,7 @@ class JobRunner:
     async def start(self) -> None:
         if self._running:
             return
-        with self.db.session() as session:
-            job_ids = list(session.scalars(select(Job.id).where(Job.status == "running")))
+        job_ids = await asyncio.to_thread(self._running_job_ids)
         self._running = True
         for job_id in job_ids:
             self._spawn(job_id)
@@ -105,35 +167,96 @@ class JobRunner:
         upstream_ref: str,
         client_token_id: int | None,
     ) -> JobOutput:
-        capability = Capability(cap)
-        if capability not in ASYNC_CAPABILITIES:
-            raise ValueError("Jobs are only supported for inherently async capabilities")
+        """Persist a recovered upstream reference before scheduling the first poll."""
+        adapter = self._validate_start(cap, provider)
         if not isinstance(upstream_ref, str) or not upstream_ref.strip():
             raise ValueError("An upstream job reference is required")
+        state = await asyncio.to_thread(
+            self._insert_job, Capability(cap), args, provider, account_id,
+            upstream_ref, client_token_id, "running", _interval(adapter.poll_interval_s),
+        )
+        if self._running:
+            self._spawn(state.id)
+        return self._output(state)
+
+    async def record_unknown_start(
+        self,
+        cap: Capability,
+        args: dict[str, Any],
+        provider: str,
+        account_id: int,
+        client_token_id: int | None,
+    ) -> JobOutput:
+        """Record an ambiguous upstream submission; never retry it automatically.
+
+        The caller must invoke this when start may have succeeded but yielded no ref.
+        The empty reference is internal only: the row remains failed until an
+        operator explicitly attaches a recovered reference. It is never polled
+        or cancelled while its upstream state is unknown.
+        """
+        self._validate_start(cap, provider)
+        state = await asyncio.to_thread(
+            self._insert_job, Capability(cap), args, provider, account_id,
+            "", client_token_id, "failed", 15.0,
+        )
+        return self._output(state)
+
+    async def reconcile_unknown_start(self, job_id: str, upstream_ref: str) -> JobOutput:
+        """Explicitly attach an independently recovered reference; do not start work."""
+        if not isinstance(upstream_ref, str) or not upstream_ref.strip():
+            raise ValueError("A recovered upstream job reference is required")
+        state = await asyncio.to_thread(self._reconcile_unknown_start, job_id, upstream_ref)
+        self._notify(job_id)
+        if self._running and state.status == "running":
+            self._spawn(job_id)
+        return self._output(state)
+
+    def _validate_start(self, cap: Capability, provider: str) -> Provider:
+        if Capability(cap) not in ASYNC_CAPABILITIES:
+            raise ValueError("Jobs are only supported for inherently async capabilities")
         adapter = self.registry.get(provider)
         if adapter is None:
             raise ValueError("Unknown job provider")
+        return adapter
+
+    def _insert_job(
+        self, cap: Capability, args: dict[str, Any], provider: str, account_id: int,
+        upstream_ref: str, client_token_id: int | None, status: str, poll_after_s: float,
+    ) -> _JobState:
         with self.db.session() as session:
             account = session.get(Account, account_id)
             if account is None or account.provider != provider:
                 raise ValueError("The job account must belong to its provider")
             job = Job(
-                capability=capability.value,
+                capability=cap.value,
                 args=deepcopy(args),
                 provider=provider,
                 account_id=account_id,
                 upstream_job_ref=upstream_ref,
                 client_token_id=client_token_id,
-                status="running",
-                poll_after_s=_interval(adapter.poll_interval_s),
+                status=status,
+                poll_after_s=poll_after_s,
+                last_error=("Upstream start outcome is unknown; manual reconciliation required"
+                            if status == "failed" and not upstream_ref else None),
             )
             session.add(job)
             session.flush()
-            output = self._output(job)
-        # The transaction commits before any poll is scheduled or response sent.
-        if self._running:
-            self._spawn(job.id)
-        return output
+            return _JobState.from_row(job)
+
+    def _reconcile_unknown_start(self, job_id: str, upstream_ref: str) -> _JobState:
+        with self.db.session() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if (job.status != "failed" or job.upstream_job_ref
+                    or job.last_error != "Upstream start outcome is unknown; manual reconciliation required"):
+                raise ValueError("Only an unknown start can be reconciled")
+            job.upstream_job_ref = upstream_ref
+            job.status = "running"
+            job.last_error = None
+            job.updated_at = utcnow() - timedelta(seconds=_interval(job.poll_after_s))
+            session.flush()
+            return _JobState.from_row(job)
 
     async def get(
         self,
@@ -146,82 +269,90 @@ class JobRunner:
             raise ValueError("wait_s must be a finite nonnegative number")
         deadline = time.monotonic() + min(wait_s, self.max_wait_s)
         while True:
-            job = self._load(job_id)
-            if job is None:
-                raise KeyError(job_id)
-            self._authorize(job, client_token_id, admin)
+            state = await asyncio.to_thread(self._load_authorized, job_id, client_token_id, admin)
             remaining = deadline - time.monotonic()
-            if job.status != "running" or remaining <= 0:
-                return self._output(job)
+            if state.status != "running" or remaining <= 0:
+                return self._output(state)
             event = self._events.setdefault(job_id, asyncio.Event())
+            # A state change during the DB read / event registration must not
+            # leave a long-poll waiting indefinitely for an already-finished job.
+            state = await asyncio.to_thread(self._load_authorized, job_id, client_token_id, admin)
+            if state.status != "running":
+                return self._output(state)
             try:
-                await asyncio.wait_for(event.wait(), remaining)
+                await asyncio.wait_for(event.wait(), max(0, deadline - time.monotonic()))
             except TimeoutError:
-                # Recheck both ownership and revocation after every await.
-                job = self._load(job_id)
-                if job is None:
-                    raise KeyError(job_id) from None
-                self._authorize(job, client_token_id, admin)
-                return self._output(job)
+                state = await asyncio.to_thread(self._load_authorized, job_id, client_token_id, admin)
+                return self._output(state)
 
     async def cancel(self, job_id: str) -> dict[str, Any]:
-        """Admin-only caller: stop local work first, then try upstream cancellation.
+        """Admin-only caller; coalesce concurrent calls and preserve unknown outcomes."""
+        operation = self._cancellations.get(job_id)
+        if operation is None:
+            operation = asyncio.create_task(self._cancel_upstream(job_id), name=f"research-job-cancel:{job_id}")
+            self._cancellations[job_id] = operation
+            operation.add_done_callback(lambda finished: self._cancel_finished(job_id, finished))
+        return await asyncio.shield(operation)
 
-        cancelled_upstream is True when acknowledged, False when unsupported or
-        rejected, and None when an error leaves the upstream state unknown.
-        Concurrent attempts share one operation. A disconnected admin request
-        does not abort it, and unknown outcomes can be retried after restart.
-        """
+    def _prepare_cancel(self, job_id: str) -> tuple[_JobState, bool]:
         with self.db.session() as session:
             job = session.get(Job, job_id)
             if job is None:
                 raise KeyError(job_id)
+            if (job.status == "failed" and not job.upstream_job_ref
+                    and job.last_error == "Upstream start outcome is unknown; manual reconciliation required"):
+                return _JobState.from_row(job), False
             if job.status != "running" and (job.status != "cancelled" or job.cancelled_upstream is not None):
-                return self._cancel_output(job)
+                return _JobState.from_row(job), False
             if job.status == "running":
                 job.status = "cancelled"
                 job.updated_at = utcnow()
                 job.cancelled_upstream = None
                 job.last_error = None
-        self._notify(job_id)
-        operation = self._cancellations.get(job_id)
-        if operation is None:
-            operation = asyncio.create_task(self._cancel_upstream(job), name=f"research-job-cancel:{job_id}")
-            self._cancellations[job_id] = operation
-            operation.add_done_callback(lambda finished: self._cancel_finished(job_id, finished))
-        return await asyncio.shield(operation)
+            session.flush()
+            return _JobState.from_row(job), True
 
-    async def _cancel_upstream(self, job: Job) -> dict[str, Any]:
-        polling = self._tasks.get(job.id)
+    async def _cancel_upstream(self, job_id: str) -> dict[str, Any]:
+        state, should_cancel = await asyncio.to_thread(self._prepare_cancel, job_id)
+        if not should_cancel:
+            return self._cancel_output(state)
+        self._notify(job_id)
+        polling = self._tasks.get(job_id)
         if polling is not None:
             polling.cancel()
             await asyncio.gather(polling, return_exceptions=True)
 
         stopped: bool | None = False
         error: str | None = None
-        adapter = self.registry.get(job.provider)
+        adapter = self.registry.get(state.provider)
         cancel_method = getattr(adapter, "cancel", None)
         if adapter is None:
             stopped, error = None, "Provider unavailable for upstream cancellation"
         elif callable(cancel_method) and getattr(cancel_method, "__func__", None) is not Provider.cancel:
             try:
                 async with asyncio.timeout(self.poll_timeout_s):
-                    ctx = await self.context_factory(job.provider, job.account_id, self.poll_timeout_s)
-                    response = await cancel_method(ctx, job.upstream_job_ref)
+                    ctx = await self.context_factory(state.provider, state.account_id, self.poll_timeout_s)
+                    response = await cancel_method(ctx, state.upstream_job_ref)
                 if response is True or response is False:
                     stopped = response
                 else:
                     stopped, error = None, "Invalid upstream cancellation response"
             except Exception as exc:
                 stopped, error = None, self._error_text(exc, "Upstream cancellation failed")
+        finished = await asyncio.to_thread(self._finish_cancel, job_id, stopped, error)
+        return self._cancel_output(finished)
+
+    def _finish_cancel(self, job_id: str, stopped: bool | None, error: str | None) -> _JobState:
         with self.db.session() as session:
-            persisted = session.get(Job, job.id)
-            if persisted is None:
-                raise KeyError(job.id)
-            persisted.cancelled_upstream = stopped
-            persisted.last_error = error
-            persisted.updated_at = utcnow()
-            return self._cancel_output(persisted)
+            job = session.get(Job, job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.status == "cancelled":
+                job.cancelled_upstream = stopped
+                job.last_error = error
+                job.updated_at = utcnow()
+            session.flush()
+            return _JobState.from_row(job)
 
     def _cancel_finished(self, job_id: str, task: asyncio.Task[dict[str, Any]]) -> None:
         if self._cancellations.get(job_id) is task:
@@ -245,32 +376,32 @@ class JobRunner:
     async def _poll_job(self, job_id: str) -> None:
         while self._running:
             try:
-                job = self._load(job_id)
+                job = await asyncio.to_thread(self._load, job_id)
                 if job is None or job.status != "running":
                     return
                 due = job.updated_at + timedelta(seconds=_interval(job.poll_after_s))
                 delay = max(0.0, (due - utcnow()).total_seconds())
                 if delay:
                     await asyncio.sleep(delay)
-                job = self._load(job_id)
+                job = await asyncio.to_thread(self._load, job_id)
                 if job is None or job.status != "running":
                     return
                 await self._poll_once(job)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                # A temporary database failure must not strand a running row.
-                # Do not log exception values: transport URLs may contain keys.
+                # Temporary DB failure must not strand a running row. Never log
+                # exception values: transport URLs and SQLite parameters may leak.
                 logger.error("Job polling could not update storage: %s", job_id)
                 await asyncio.sleep(1)
 
-    async def _poll_once(self, job: Job) -> None:
+    async def _poll_once(self, job: _JobState) -> None:
         if not isinstance(job.upstream_job_ref, str) or not job.upstream_job_ref.strip():
-            self._persist(job.id, "failed", error="Missing upstream job reference; manual reconciliation required")
+            await self._persist(job.id, "failed", error="Missing upstream job reference; manual reconciliation required")
             return
         adapter = self.registry.get(job.provider)
         if adapter is None:
-            self._persist(job.id, "failed", error="Persisted job provider is unavailable")
+            await self._persist(job.id, "failed", error="Persisted job provider is unavailable")
             return
         try:
             async with asyncio.timeout(self.poll_timeout_s):
@@ -284,7 +415,7 @@ class JobRunner:
                 if reset_at.tzinfo is None:
                     reset_at = reset_at.replace(tzinfo=timezone.utc)
                 delay = (reset_at - utcnow()).total_seconds()
-            self._persist(
+            await self._persist(
                 job.id,
                 "running" if retryable else "failed",
                 error=self._error_text(exc, "Upstream polling failed"),
@@ -292,7 +423,7 @@ class JobRunner:
             )
             return
         except (httpx.TransportError, TimeoutError, ConnectionError, OSError) as exc:
-            self._persist(
+            await self._persist(
                 job.id,
                 "running",
                 error=self._error_text(exc, "Upstream polling temporarily unavailable"),
@@ -300,14 +431,14 @@ class JobRunner:
             )
             return
         except Exception as exc:
-            self._persist(job.id, "failed", error=self._error_text(exc, "Upstream polling failed"))
+            await self._persist(job.id, "failed", error=self._error_text(exc, "Upstream polling failed"))
             return
 
         if not isinstance(update, JobUpdate) or not isinstance(update.status, str):
-            self._persist(job.id, "failed", error="Invalid upstream job update")
+            await self._persist(job.id, "failed", error="Invalid upstream job update")
             return
         if update.error is not None and not isinstance(update.error, str):
-            self._persist(job.id, "failed", error="Invalid upstream job error")
+            await self._persist(job.id, "failed", error="Invalid upstream job error")
             return
         status = {
             "pending": "running", "queued": "running", "processing": "running",
@@ -315,7 +446,7 @@ class JobRunner:
             "error": "failed", "canceled": "cancelled",
         }.get(update.status, update.status)
         if status not in {"running", "completed", "failed", "cancelled"}:
-            self._persist(job.id, "failed", error="Invalid upstream job status")
+            await self._persist(job.id, "failed", error="Invalid upstream job status")
             return
         result = None
         if status == "completed":
@@ -334,22 +465,17 @@ class JobRunner:
                     raise ValueError("The final job result must be an object")
                 json.dumps(result, allow_nan=False)
             except Exception as exc:
-                self._persist(job.id, "failed", error=self._error_text(exc, "Job result finalization failed"))
+                await self._persist(job.id, "failed", error=self._error_text(exc, "Job result finalization failed"))
                 return
-        error = update.error
-        if status == "completed":
-            error = None
-        elif status == "failed" and not error:
-            error = "Upstream job failed"
-        self._persist(
-            job.id,
-            status,
-            result=result,
-            error=error,
+        error = None if status == "completed" else ("Upstream job failed" if status == "failed" else None)
+        if update.error and status == "running":
+            error = "Upstream job reported an error"
+        await self._persist(
+            job.id, status, result=result, error=error,
             poll_after_s=_interval(update.poll_after_s, _interval(adapter.poll_interval_s)),
         )
 
-    def _persist(
+    async def _persist(
         self,
         job_id: str,
         status: str,
@@ -358,10 +484,20 @@ class JobRunner:
         error: str | None = None,
         poll_after_s: float | None = None,
     ) -> None:
+        changed = await asyncio.to_thread(
+            self._write_update, job_id, status, result, error, poll_after_s,
+        )
+        if changed:
+            self._notify(job_id)
+
+    def _write_update(
+        self, job_id: str, status: str, result: dict[str, Any] | None,
+        error: str | None, poll_after_s: float | None,
+    ) -> bool:
         with self.db.session() as session:
             job = session.get(Job, job_id)
             if job is None or job.status != "running":
-                return
+                return False
             # An admin cancellation wins even if a provider ignores task cancellation.
             job.status = status
             job.result = result
@@ -371,21 +507,29 @@ class JobRunner:
                 job.poll_after_s = poll_after_s
             if status == "cancelled":
                 job.cancelled_upstream = True
-        self._notify(job_id)
+            return True
 
-    def _load(self, job_id: str) -> Job | None:
+    def _running_job_ids(self) -> list[str]:
         with self.db.session() as session:
-            return session.get(Job, job_id)
+            return list(session.scalars(select(Job.id).where(Job.status == "running")))
 
-    def _authorize(self, job: Job, client_token_id: int | None, admin: bool) -> None:
-        if admin:
-            return
-        if client_token_id is None or job.client_token_id != client_token_id:
-            raise PermissionError("This job belongs to another client token")
+    def _load(self, job_id: str) -> _JobState | None:
         with self.db.session() as session:
-            token = session.get(ClientToken, client_token_id)
-            if token is None or token.revoked:
-                raise PermissionError("The client token has been revoked")
+            job = session.get(Job, job_id)
+            return _JobState.from_row(job) if job is not None else None
+
+    def _load_authorized(self, job_id: str, client_token_id: int | None, admin: bool) -> _JobState:
+        with self.db.session() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if not admin:
+                if client_token_id is None or job.client_token_id != client_token_id:
+                    raise PermissionError("This job belongs to another client token")
+                token = session.get(ClientToken, client_token_id)
+                if token is None or token.revoked:
+                    raise PermissionError("The client token has been revoked")
+            return _JobState.from_row(job)
 
     def _notify(self, job_id: str) -> None:
         event = self._events.pop(job_id, None)
@@ -393,26 +537,26 @@ class JobRunner:
             event.set()
 
     @staticmethod
-    def _output(job: Job) -> JobOutput:
+    def _output(job: _JobState) -> JobOutput:
         return JobOutput(
             job_id=job.id,
             status=job.status,
             poll_after_s=job.poll_after_s,
             result=deepcopy(job.result),
-            last_error=job.last_error,
+            last_error=_public_error(job.last_error),
         )
 
     @staticmethod
-    def _cancel_output(job: Job) -> dict[str, Any]:
+    def _cancel_output(job: _JobState) -> dict[str, Any]:
         return {
             "job_id": job.id,
             "status": job.status,
             "cancelled_upstream": job.cancelled_upstream,
-            "last_error": job.last_error,
+            "last_error": _public_error(job.last_error),
         }
 
     @staticmethod
     def _error_text(exc: Exception, prefix: str) -> str:
         if isinstance(exc, ProviderError):
-            return f"{exc.kind.value}: {str(exc)[:1000]}"
+            return f"{exc.kind.value}: {prefix}"
         return f"{prefix} ({type(exc).__name__})"
