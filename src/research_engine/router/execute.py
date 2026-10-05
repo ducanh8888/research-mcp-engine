@@ -27,6 +27,7 @@ from research_engine.providers.registry import build_registry, default_routes
 from research_engine.router.accounts import AccountSelector
 from research_engine.router.limiter import RequestLimiter
 from research_engine.router.requests import InvalidRequest, for_provider, validate
+from research_engine.router.redact import safe_error
 from research_engine.router.results import validate_result
 from research_engine.storage.blobs import BlobStore
 from research_engine.storage.crypto import Cipher, SecretStore
@@ -213,7 +214,7 @@ class Engine:
             session.add(Attempt(request_id=request_id, provider=name, account_id=account_id,
                                 outcome=outcome, latency_ms=(time.monotonic() - started) * 1000,
                                 kind=error.kind.value if error else None,
-                                error=str(error)[:1000] if error else None))
+                                error=safe_error(error) if error else None))
 
     def _availability(self, account_id: int, cap: Capability, error: ProviderError | None,
                       result: Result | None = None) -> None:
@@ -267,10 +268,8 @@ class Engine:
                                     request_id=request_id) from error
                 return Outcome(name, reason="deadline exceeded", pending=True)
             except ProviderError as error:
-                if context is not None:
-                    for secret in context.credentials.values():
-                        if isinstance(secret, str) and secret:
-                            error.args = (str(error).replace(secret, "[redacted]"),)
+                message = safe_error(error, context.credentials if context else None)
+                error.args = (message,)
                 if getattr(error, "scope", None) != "connection":
                     await asyncio.to_thread(self._availability, account_id, cap, error)
                 await asyncio.to_thread(self._attempt, request_id, name, account_id, "failed", began, error)
@@ -279,7 +278,7 @@ class Engine:
                         await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
                                     request_id=request_id) from error
-                last_reason = f"{error.kind.value}: {error}"
+                last_reason = message
                 # A bad input or missing target is account-independent. Other providers may
                 # still resolve the target, but retrying the same provider with another key cannot.
                 if error.kind in {ErrorKind.BAD_REQUEST, ErrorKind.TARGET}:
@@ -614,14 +613,13 @@ class Engine:
         return await self.execute(tool, {**args, "fresh": True}, owner, replay_of=request_id)
 
     async def test_account(self, account_id: int) -> dict:
-        def load():
+        def load() -> str:
             with self.db.session() as session:
                 row = session.get(Account, account_id)
                 if row is None:
                     raise KeyError(account_id)
-                row.cooldown_until, row.cooldown_reason = None, None
-                row.blocked_capabilities, row.credential = {}, "ok"
                 return row.provider
+
         name = await asyncio.to_thread(load)
         provider = self.providers[name]
         cap = next((c for c in provider.capabilities if c in SEARCH_CAPABILITIES), None)
@@ -629,17 +627,26 @@ class Engine:
             cap = next((c for c in provider.capabilities if c not in ASYNC_CAPABILITIES), None)
         if cap is None:
             return {"status": "pending", "reason": "An async provider requires a real job for a live check"}
+        if not await asyncio.to_thread(self.account_selector.eligible, name, cap, account_id):
+            return {"status": "blocked", "reason": "Account is unavailable; Reset or reconnect explicitly"}
         args = {"query": "research", "limit": 1, "ids": ["10.1038/nature14539"],
                 "target": "https://example.com", "citation": "10.1038/nature14539", "seeds": ["10.1038/nature14539"]}
         rid = "r_" + uuid.uuid4().hex
         await asyncio.to_thread(self._record_request, rid, cap.value, args, None)
-        context = await self.context(name, account_id)
+        context = None
         try:
+            context = await self.context(name, account_id)
             result = await provider.call(cap, args, context)
+            validate_result(cap, result)
             await asyncio.to_thread(self._availability, account_id, cap, None, result)
             payload = {"status": "complete", "provider": name, "account_id": account_id}
         except ProviderError as error:
-            await asyncio.to_thread(self._availability, account_id, cap, error)
-            payload = {"status": "failed", "kind": error.kind.value, "reason": str(error)}
+            reason = safe_error(error, context.credentials if context else None)
+            error.args = (reason,)
+            if getattr(error, "scope", None) != "connection":
+                await asyncio.to_thread(self._availability, account_id, cap, error)
+            payload = {"status": "failed", "kind": error.kind.value, "reason": reason}
+        except Exception as error:
+            payload = {"status": "failed", "kind": "internal", "reason": f"Adapter error ({type(error).__name__})"}
         await asyncio.to_thread(self._record_request, rid, cap.value, args, None, result=payload)
         return payload

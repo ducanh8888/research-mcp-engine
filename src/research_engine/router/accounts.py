@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import select
 
 from research_engine.providers.base import Capability, ErrorKind, ProviderError, Result
+from research_engine.router.redact import safe_error
 from research_engine.storage.db import Account, Database, ProviderRow, utcnow
 
 
@@ -218,7 +219,7 @@ class AccountSelector:
                 account.credential = "needs_auth"
             elif error.kind == ErrorKind.PLAN and error.block_capability:
                 account.blocked_capabilities = {
-                    **(account.blocked_capabilities or {}), capability.value: str(error)[:300],
+                    **(account.blocked_capabilities or {}), capability.value: safe_error(error)[:300],
                 }
             elif error.kind in {ErrorKind.RATE_LIMITED, ErrorKind.EXHAUSTED}:
                 seconds = error.retry_after
