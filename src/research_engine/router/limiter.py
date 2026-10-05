@@ -63,7 +63,7 @@ class RequestLimiter:
         network operation with its remaining timeout.
         """
         rate, limit = self._validate(rate_limit_rps, concurrency)
-        key = (provider, quota_group or str(account_id))
+        key = (provider, f"group:{quota_group}" if quota_group else f"account:{account_id}")
         bucket = self._buckets.setdefault(key, _Bucket())
         # Account and group modes cannot silently change concurrency with
         # requests in flight. Mode/config edits require a new limiter.
