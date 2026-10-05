@@ -9,8 +9,9 @@ Unchecked items remain open or only partially verified; phase acceptance is sepa
 and records environment limits. Phase ownership and priority are in [roadmap.md](roadmap.md).
 
 These are observed shortcuts, inconsistent paths and scope leftovers. No authorship or motive
-is inferred. Normal typed fallback, partial results, exact-ID conflict guards, encrypted token
-storage and restart polling are required behavior and remain.
+is inferred. Concurrent evidence collection, scoped account availability retries, sequential
+reads/unresolved metadata/single async starts, partial results, exact-ID conflict guards,
+encrypted token storage and restart polling are required behavior and remain.
 
 ## Remove or replace before expanding implementation
 
@@ -146,7 +147,7 @@ storage and restart polling are required behavior and remain.
   Close when two providers resolve different IDs and both appear in coverage, while unfinished
   IDs remain distinguishable from definitive misses in a partial response.
 
-- [x] **C19 — Validate payloads before declaring success or ending fallback.**
+- [x] **C19 — Validate payloads before declaring success or ending sequential reads.**
   `Result` allows all payloads to be absent/extra, and `_call` checks only its class.
   Sequential read then stops on `Result(document=None)` and returns complete/ok with no document.
   Define capability-specific success/empty/invalid criteria at one boundary, with explicit
@@ -192,8 +193,9 @@ storage and restart polling are required behavior and remain.
   and `TARGET`. Three accounts repeat an identical missing-target request three times.
   Make error scope explicit: credential/quota failures can select another eligible account;
   invalid request or provider target absence goes to the appropriate provider/input outcome.
-  Close when target/bad-input failures do not replay across keys, while auth/rate/plan fallback
-  and capability-block semantics still follow the error table.
+  Close when target/bad-input failures do not replay across keys, while auth/rate/quota retries
+  and capability-block semantics follow the error table. The earlier C24 closure does not
+  establish the broader account retry restriction now required by C33.
 
 - [x] **C25 — Keep job storage off the event loop.**
   `JobRunner.create/get/cancel/_poll_once` directly open synchronous DB sessions or call
@@ -255,6 +257,39 @@ storage and restart polling are required behavior and remain.
   Close with a clean container build whose installed runtime versions match the lock and a
   real HTTP discovery/tool smoke test. Keep paid/live checks separate.
 
+## Current branch evidence-coverage correction
+
+- [ ] **C33 — Enforce concurrent evidence coverage and truthful partial status.**
+  Static review at `27d28ee0747f98634756d076ae3c1d1c9df8255c` found that
+  `router/execute.py:Engine._route` accepts sequential search configuration;
+  `_execute` then stops on first success and labels ordinary fanout with failed peers
+  complete unless pending/metadata conditions apply. `cache.py:Cache.put_query`
+  caches complete output, so reduced evidence can be reused as complete. `_call`
+  still traverses accounts after plan/transient/internal errors. These are source
+  observations, not a newly run regression suite.
+
+  Enforce mandatory fanout for all six search capabilities and applicable
+  verification/graph/editorial providers. Run every enabled, configured independent
+  routed source concurrently under one deadline; preserve all successful results,
+  provenance and failed/unfinished coverage. A peer error, unavailable account or
+  timeout returns partial; invalidate previously misclassified complete query entries.
+  Normalize search lists with conservative exact dedup and plain RRF, then validated
+  rerank only when enabled. Typed assertions aggregate without RRF.
+
+  Validate execution mode and actual-provider identity per capability at save, upgrade and
+  runtime. Correct legacy sequential search routes without losing provider selection,
+  credentials or unrelated operator edits. Covered commodity operations use one
+  explicit OmniRoute entry: no direct/bridge duplicate vote or gateway-triggered retry
+  of frozen direct code. Preserve direct specialist and demonstrated operation gaps.
+  Account failover is only same-provider auth/rate/quota availability and contributes
+  one result list; other errors must not walk the account pool.
+
+  Keep sequential same-source reads, unresolved metadata and exactly one safe async
+  start. Do not introduce provider chains, fallback architecture, scoring policy,
+  classifiers or control-plane machinery. Close with the focused public-contract
+  [regression matrix](roadmap.md#evidence-coverage-correction); record two independent
+  live sources separately where configured, leaving unavailable live checks pending.
+
 ## Retire after verified bridge cutover
 
 - [ ] **C10 — Retire duplicate commodity execution and API rerank credential paths per operation.**
@@ -262,7 +297,9 @@ storage and restart polling are required behavior and remain.
   `merge/rerank.py:_BACKENDS/_http_ranking` duplicate covered upstream operations.
   API rerank currently reads inline options/environment keys outside the account secret path.
   Ordinary `Engine._payload` does not call rerank, so module tests alone do not prove integration.
-  Build/verify the bridge and route actual calls through it before retiring redundant paths.
+  Build/verify the bridge and route actual calls through it before retiring redundant code.
+  Covered direct operations must not remain active fallback entries or duplicate votes.
+  A gateway failure is explicit reduced coverage, never permission to reactivate them.
   Preserve Firecrawl map/crawl and any verified specialized gaps, local readers/rerank,
   encrypted accounts, notices and frozen checkpoint history.
   Close per migrated operation with live parity, correct provenance/filter/error behavior,
@@ -286,8 +323,10 @@ refresh-race evidence on eligible hosted accounts. C10 is operation-by-operation
 OmniRoute DuckDuckGo/Exa search and Jina read worked live, API rerank helper
 worked live and its ordinary path passed fixtures, but Brave/Serper upstream
 accounts are unconfigured; no upstream account-pool failover or filter parity
-was verified. Retained direct commodity modules/routes and credentials must
-not be removed without each operation's cutover checks. C27 has synthetic
+was verified. Preserve retained direct code/credential data pending each operation's
+cutover evidence, while removing covered direct operations from active fallback/duplicate
+routes under C33. C33's concurrent coverage, partial/cache and account retry corrections
+remain open; existing closure counts do not validate them. C27 has synthetic
 call/Test and job poll/cancel redaction fixtures; complete log/admin/OAuth
 failure injection is pending. C30 prunes cache/orphan blobs safely but only
 reports aged request/job rows: historical row deletion was denied pending
@@ -295,11 +334,14 @@ an explicitly authorized retention policy. No deletion is attempted.
 
 ## Required retained behavior
 
-- Ordinary typed provider/account fallback, deadline cancellation and visible partial coverage.
+- Concurrent independent provider evidence, same-provider auth/rate/quota availability
+  retries, required sequential source/metadata/start progression, deadline cancellation
+  and visible partial coverage.
 - No repeated upstream start after an ambiguous result.
 - Distinct strong-ID evidence, durable handles and source-attributed records.
 - Real refresh/state/session checks, auth rejection and secret redaction.
 - Rerank failure preserving fused order with visible diagnostics.
 
-A broad `except`, fallback or compatibility branch is not automatically a defect.
-The entries above identify the concrete semantics that must change or be verified.
+A safe read retry, account availability retry or compatibility branch is not automatically
+a defect. Search-provider fallback chains violate the owner directive. The entries above
+identify the concrete semantics that must change or be verified.

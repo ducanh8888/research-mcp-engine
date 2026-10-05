@@ -14,6 +14,41 @@ The engine is implemented in part: `src/`, `tests/`, migrations, Docker and CLI 
 Hosted-MCP normalized adapters and the OmniRoute bridge are missing at baseline.
 Do not call a phase done because modules/fixtures exist.
 
+## Owner directive — evidence coverage
+
+Optimize research requests for evidence coverage and result quality, not fallback.
+
+For every search-like capability (`web_search`, `news_search`, `paper_search`,
+`paper_related`, `developer_search`, `repo_search`), execute all enabled, configured,
+semantically independent providers in the route concurrently within one deadline.
+Never use first-success-wins or provider fallback chains.
+
+Count each real upstream provider once. Never treat direct + OmniRoute access to the
+same provider/operation as separate evidence. Covered commodity operations use the
+explicit OmniRoute provider; do not silently fall back to the frozen direct adapter
+if OmniRoute fails. Specialist sources remain direct.
+
+Merge all successful results with provenance → conservative exact dedup → plain RRF →
+validated rerank only when enabled. One provider failing or timing out only reduces
+coverage; preserve successful peers and return partial.
+
+Keep multi-account failover inside a provider for auth/rate/quota availability only.
+Accounts never become independent search votes.
+
+Preserve sequential execution only where the operation itself requires it: fetching
+the same source (`web_read`/`paper_read`), resolving unresolved metadata IDs, or starting
+exactly one async job to avoid duplicate work. `citation_verify`, `citation_graph`,
+and `editorial_check` fan out to applicable providers and aggregate source assertions;
+do not RRF them.
+
+Do not add fallback architecture, provider chains, scoring policy, classifiers, or
+other control-plane machinery. One MCP search request should gather the strongest
+available independent evidence set in that single request.
+
+This instruction overrides earlier search-provider fallback language. Apply the open
+C33 correction in [cleanup](docs/cleanup.md) and its [acceptance checks](docs/roadmap.md#evidence-coverage-correction).
+Existing implementation and test counts do not establish compliance with this directive.
+
 ## Scope
 
 Defer direct development for search/fetch/API rerank operations already covered by OmniRoute.
@@ -22,7 +57,8 @@ selection: priority, round-robin, quota-aware. Commodity accounts stay upstream 
 
 Reuse compatible code, preserve attribution and avoid importing a model router's control plane.
 Deferred items are not an automatic follow-on queue. Remove/replace marked shortcuts using
-their closure criteria; preserve validated fallback, OAuth and restart semantics.
+their closure criteria; preserve account availability retries, sequential source/metadata
+progression, OAuth and restart semantics.
 
 ## Structure
 
