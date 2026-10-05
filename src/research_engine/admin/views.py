@@ -24,6 +24,7 @@ from wtforms.validators import Optional
 
 from research_engine.admin.oauth_connect import OAuthConnect
 from research_engine.config import Settings
+from research_engine.router.accounts import SELECTION_MODES, selection_mode
 from research_engine.storage.db import (
     Account, Attempt, ClientToken, Database, DocumentCache, Job, ProviderRow,
     QueryCache, RequestRow, Routing, create_client_token,
@@ -179,7 +180,29 @@ def mount_admin(
         can_create = can_delete = False
         column_list = [ProviderRow.name, ProviderRow.enabled, ProviderRow.capabilities]
         column_details_list = column_list + [ProviderRow.options]
-        form_columns = [ProviderRow.enabled, ProviderRow.options]
+        form_columns = [ProviderRow.enabled, ProviderRow.options, "account_selection"]
+        form_extra_fields = {
+            "account_selection": SelectField(
+                "Direct account selection",
+                choices=[(mode, mode.replace("_", " ").title()) for mode in
+                         ("priority", "round_robin", "quota_aware")],
+                description="Applies to direct accounts only. Bridged accounts are selected upstream.",
+            ),
+        }
+
+        async def on_form_prefill(self, data: dict[str, Any], model: Any) -> None:
+            data["account_selection"] = selection_mode(model.options)
+
+        async def on_model_change(self, data: dict[str, Any], model: Any, is_created: bool,
+                                  request: Request) -> None:
+            mode = data.pop("account_selection", "priority")
+            if mode not in SELECTION_MODES:
+                raise ValueError("Choose a supported account selection mode")
+            if not isinstance(data.get("options"), dict):
+                raise ValueError("Provider options must be a JSON object")
+            if "selection_mode" in data["options"] and data["options"]["selection_mode"] != mode:
+                raise ValueError("Account selection mode conflicts with provider options")
+            data["options"] = {**data["options"], "selection_mode": mode}
 
     class AccountView(ModelView, model=Account):
         name_plural = "Accounts"
@@ -189,7 +212,10 @@ def mount_admin(
             Account.credential, Account.cooldown_until, Account.blocked_capabilities,
             Account.quota_remaining, Account.quota_reset_at, Account.adapter_status,
         ]
-        column_details_list = column_list + [Account.cooldown_reason, Account.last_used]
+        column_details_list = column_list + [
+            Account.quota_group, Account.quota_units, Account.quota_scope,
+            Account.quota_observed_at, Account.cooldown_reason, Account.last_used,
+        ]
         form_columns = [
             Account.provider, Account.label, Account.enabled, Account.priority,
             Account.quota_group, "secret",
@@ -314,9 +340,11 @@ def mount_admin(
                                 account = session.get(Account, account_id)
                                 if account is None:
                                     raise ValueError("Account does not exist")
-                                account.credential = "unknown"
+                                # Reset availability explicitly; it is not an authentication test.
+                                # Preserve needs_auth/disabled until credentials are reconnected
+                                # or a real check succeeds.
                                 account.cooldown_until = account.cooldown_reason = None
-                                account.blocked_capabilities = []
+                                account.blocked_capabilities = {}
                                 account.transient_failures = 0
                                 account.adapter_status = "unknown"
                             return {"reset_account_id": account_id}
@@ -335,7 +363,10 @@ def mount_admin(
                                         counts[name] = session.execute(delete(table)).rowcount
                             return {"cleared": counts}
 
-                        result = await anyio.to_thread.run_sync(clear)
+                        if engine is not None:
+                            result = {"cleared": await anyio.to_thread.run_sync(engine.cache.clear, kind)}
+                        else:
+                            result = await anyio.to_thread.run_sync(clear)
                     elif command == "oauth_connect":
                         if oauth is None:
                             raise ValueError("Upstream OAuth is not configured")
