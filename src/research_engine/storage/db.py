@@ -70,12 +70,15 @@ class Account(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quota_group: Mapped[str | None] = mapped_column(String, nullable=True)
-    credential: Mapped[str] = mapped_column(String, default="unknown")
+    credential: Mapped[str] = mapped_column(String, default="needs_auth")
     cooldown_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     cooldown_reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    blocked_capabilities: Mapped[list[str]] = mapped_column(MutableList.as_mutable(JSON), default=list)
+    blocked_capabilities: Mapped[dict[str, str]] = mapped_column(MutableDict.as_mutable(JSON), default=dict)
     quota_remaining: Mapped[float | None] = mapped_column(Float, nullable=True)
     quota_reset_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    quota_observed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    quota_units: Mapped[str | None] = mapped_column(String, nullable=True)
+    quota_scope: Mapped[str | None] = mapped_column(String, nullable=True)
     transient_failures: Mapped[int] = mapped_column(Integer, default=0)
     last_used: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     adapter_status: Mapped[str] = mapped_column(String, default="unknown")
@@ -258,17 +261,23 @@ class Database:
         entries = catalog.items() if isinstance(catalog, Mapping) else ((p.name, p) for p in catalog)
         with self.session() as session:
             for name, descriptor in entries:
-                if session.get(ProviderRow, name) is None:
+                shipped_capabilities = [
+                    _cap_name(cap) for cap in _descriptor_value(descriptor, "capabilities", [])
+                ]
+                provider = session.get(ProviderRow, name)
+                if provider is None:
                     session.add(ProviderRow(
                         name=name,
                         options=dict(_descriptor_value(descriptor, "options", {})),
-                        capabilities=[
-                            _cap_name(cap) for cap in _descriptor_value(descriptor, "capabilities", [])
-                        ],
+                        capabilities=shipped_capabilities,
                     ))
                     session.flush()
                     if _descriptor_value(descriptor, "keyless", False):
-                        session.add(Account(provider=name, label="local", credential="valid"))
+                        session.add(Account(provider=name, label="local", credential="ok"))
+                elif provider.capabilities != shipped_capabilities:
+                    # Adapter support is a shipped fact. Enabled, options, accounts and
+                    # operator routes belong to the operator and must not be overwritten.
+                    provider.capabilities = shipped_capabilities
             for capability, route in (routes or {}).items():
                 key = _cap_name(capability)
                 if session.get(Routing, key) is not None:

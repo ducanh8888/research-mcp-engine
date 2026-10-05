@@ -15,6 +15,7 @@ MIGRATIONS = (
     ("0001", "v0001_core"),
     ("0002", "v0002_cache"),
     ("0003", "v0003_jobs"),
+    ("0004", "v0004_account_state"),
 )
 
 
