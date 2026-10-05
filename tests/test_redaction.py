@@ -27,6 +27,9 @@ def test_nested_secret_and_url_are_not_reflected():
     message = safe_error(error, {"nested": {"oauth": {"access_token": secret}}})
     assert secret not in message and "https://" not in message
     assert message.startswith("auth:")
+    unknown = safe_error(ProviderError(ErrorKind.TRANSIENT,
+                                        "contact provider with unknown-private-string"))
+    assert "unknown-private-string" not in unknown
 
 
 @pytest.mark.asyncio

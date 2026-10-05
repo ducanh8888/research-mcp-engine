@@ -163,7 +163,7 @@ def test_known_reset_persists_but_auth_plan_and_internal_fault_are_not_shared(po
                                  error=ProviderError(ErrorKind.PLAN, "not entitled"))
     with db.session() as session:
         account = session.get(Account, second)
-        assert account.blocked_capabilities == {"paper_search": "plan: not entitled"}
+        assert account.blocked_capabilities == {"paper_search": "plan: upstream error"}
         assert account.credential == "ok"
         assert session.get(Account, first).credential == "needs_auth"
     # Unexpected exceptions are handled by the router, not translated to account failures here.
