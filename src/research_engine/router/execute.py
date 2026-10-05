@@ -450,10 +450,12 @@ class Engine:
         except InvalidRequest as error:
             raise ToolError("INVALID_INPUT", str(error)) from error
         request_id = "r_" + uuid.uuid4().hex
+        deadline = time.monotonic() + args["deadline_s"]
         await asyncio.to_thread(self._record_request, request_id, cap.value, args, client_token_id,
                                 replay_of=replay_of)
         try:
-            result = await self._execute(cap, args, client_token_id, request_id)
+            async with asyncio.timeout_at(deadline):
+                result = await self._execute(cap, args, client_token_id, request_id, deadline)
             result = self._bounded(result, request_id)
             await asyncio.to_thread(self._record_request, request_id, cap.value, args, client_token_id, result=result)
             return result
@@ -483,11 +485,11 @@ class Engine:
                                     result=internal.payload())
             raise internal from error
 
-    async def _execute(self, cap: Capability, args: dict, client_token_id: int | None, request_id: str) -> dict:
+    async def _execute(self, cap: Capability, args: dict, client_token_id: int | None,
+                       request_id: str, deadline: float) -> dict:
         read = cap in {Capability.WEB_READ, Capability.PAPER_READ}
         original_target = args.get("target")
         handle = None
-        deadline = time.monotonic() + args["deadline_s"]
         if read:
             args["target"], handle = await asyncio.to_thread(self._resolve_target, original_target)
             if not args.get("fresh"):
@@ -502,6 +504,9 @@ class Engine:
             if cached:
                 return {**cached, "request_id": request_id}
         mode, names = await asyncio.to_thread(self._route, cap)
+        # Leave a small budget for partial aggregation, persistence and the
+        # response envelope before the whole-request guard expires.
+        provider_deadline = deadline - 0.5
         provider_args = {k: v for k, v in args.items() if k != "cursor" or not read}
         outcomes: list[Outcome] = []
         metadata = None
@@ -513,12 +518,12 @@ class Engine:
             for name in names:
                 if not pending:
                     break
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= provider_deadline:
                     outcomes.append(Outcome(name, reason="deadline exceeded", pending=True))
                     metadata_attempts.append((outcomes[-1], pending[:]))
                     break
                 attempted = pending[:]
-                outcome = await self._call(cap, {**provider_args, "ids": attempted}, name, request_id, deadline)
+                outcome = await self._call(cap, {**provider_args, "ids": attempted}, name, request_id, provider_deadline)
                 outcomes.append(outcome)
                 metadata_attempts.append((outcome, attempted))
                 if outcome.result is not None:
@@ -533,11 +538,11 @@ class Engine:
             # accumulated independently below, never substituted for attempt coverage.
             metadata = (records, pending, per_id)
         elif mode == "fanout":
-            outcomes = list(await asyncio.gather(*(self._call(cap, provider_args, name, request_id, deadline)
+            outcomes = list(await asyncio.gather(*(self._call(cap, provider_args, name, request_id, provider_deadline)
                                                    for name in names)))
         else:
             for name in names:
-                outcome = await self._call(cap, provider_args, name, request_id, deadline,
+                outcome = await self._call(cap, provider_args, name, request_id, provider_deadline,
                                            start=cap in ASYNC_CAPABILITIES, owner=client_token_id)
                 outcomes.append(outcome)
                 if outcome.result is not None or outcome.upstream_ref is not None or outcome.pending:

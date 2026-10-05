@@ -30,7 +30,8 @@ status assertions without rewriting the historical audit.
 Implementation commits on `research-specialists` now cover the core correctness,
 versioned migrations, specialist account selector, locked container, guarded hosted
 search adapters, explicit OmniRoute search/read bridge and ordinary-path optional
-rerank. `uv run --frozen pytest -q`: **352 passed**; Ruff and whitespace checks passed.
+rerank. `uv run --frozen pytest -q`: **353 passed** after the whole-request deadline
+regression; Ruff and whitespace checks passed.
 The container is healthy on loopback/tailnet and real MCP calls to available
 OmniRoute, open academic, GitHub and Firecrawl operations succeeded. See the
 [deployment record](deployment.md#validation-record-2026-10-06) for the precise
@@ -38,7 +39,7 @@ observations. None of these facts alone accepts P0–P5 in full.
 
 | Phase | Implemented and checked | Exit criteria still pending |
 |---|---|---|
-| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs; frozen suite/container pass | C33 evidence-coverage correction and focused regressions; exhaustive live deadline/error fault injection |
+| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs and absolute deadline (353 fixtures pass); container pass | C33 evidence-coverage correction and focused regressions; additional live fault injection and full admin/OAuth secret-path validation |
 | P0.2 | Explicit catalog, stable credentials, account Test separation, request-bound limiter, nondestructive route-aware query keys, cache/blob maintenance | C03 concurrent OAuth edge cases; historical request/job retention approval; live admin route/Reset check |
 | P1 | One encrypted OmniRoute connection, explicit search/fetch/rerank; live DuckDuckGo/Exa search and Jina read | Brave/Serper upstream keys absent; upstream multi-account and provider quota failover not observable with API-scoped credential; fresh cache bypass unsupported |
 | P2 | Priority/round-robin/quota-aware fixtures, shared cooldown and persistent observations, admin mode | Two real specialist accounts with actual auth/rate/quota availability retries |
@@ -54,7 +55,7 @@ pending. These blockers do not prevent independently verified operations from ru
 The owner directive in [AGENTS.md](../AGENTS.md#owner-directive--evidence-coverage)
 requires concurrent collection of independent evidence in one MCP request. C33 in
 [cleanup](cleanup.md) is open and belongs to P0.1. Implement it before claiming search
-acceptance in P1/P3/P5. The existing 352-test/live snapshot does not validate this new
+acceptance in P1/P3/P5. The existing 353-test/live snapshot does not validate this new
 contract; retain its evidence and add the following behavioral checks.
 
 | Check | Required observation |

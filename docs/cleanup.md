@@ -170,7 +170,7 @@ encrypted token storage and restart polling are required behavior and remain.
   Close with overlapping DOI graphs, conflicting identifiers, valid endpoints, distinct
   source assertions and a combined-budget truncation case.
 
-- [ ] **C22 — Apply actual runtime deadlines and response bounds.**
+- [x] **C22 — Apply actual runtime deadlines and response bounds.**
   Tools/router use a 30-second default and accept up to 120 seconds; design specifies 40 and
   a 5–50 second clamp. `Settings.max_response_bytes` has no runtime consumer. Individual
   document/HTTP limits do not bound metadata, graph or completed-job envelopes.
@@ -311,10 +311,11 @@ encrypted token storage and restart polling are required behavior and remain.
 **Verified locally with real ORM/HTTP fixtures and frozen checks:** C01 (explicit
 imports), C02 (locked SDK), C04–C06 (shared account state/Test), C07 (route-key
 cache correctness without deleting historical rows), C08–C09, C11–C16,
-C18–C21, C23–C26, C28–C29 and C31–C32. Baseline defect descriptions above
-remain for auditability; they are not assertions about current code. C22 response
-bounds and ordinary deadline clamp pass fixtures, but total DB/merge wall-clock
-deadline coverage remains incomplete, so C22 stays open. C17 scholarly related
+C18–C26, C28–C29 and C31–C32. Baseline defect descriptions above
+remain for auditability; they are not assertions about current code. C22 now
+carries one 5–50 second deadline across the entire request including cache/merge,
+reserving aggregation time for partial outcomes and returning bounded errors.
+C17 scholarly related
 modes, citation resolver and graph handling pass adapter fixtures, but public
 multi-seed/ambiguity integration is not exhaustively checked, so it stays open.
 
