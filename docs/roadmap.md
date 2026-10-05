@@ -30,7 +30,8 @@ status assertions without rewriting the historical audit.
 Implementation commits on `research-specialists` now cover the core correctness,
 versioned migrations, specialist account selector, locked container, guarded hosted
 search adapters, explicit OmniRoute search/read bridge and ordinary-path optional
-rerank. `uv run --frozen pytest -q`: **352 passed**; Ruff and whitespace checks passed.
+rerank. `uv run --frozen pytest -q`: **353 passed** after the whole-request deadline
+regression; Ruff and whitespace checks passed.
 The container is healthy on loopback/tailnet and real MCP calls to available
 OmniRoute, open academic, GitHub and Firecrawl operations succeeded. See the
 [deployment record](deployment.md#validation-record-2026-10-06) for the precise
@@ -38,7 +39,7 @@ observations. None of these facts alone accepts P0–P5 in full.
 
 | Phase | Implemented and checked | Exit criteria still pending |
 |---|---|---|
-| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs; frozen suite/container pass | Exhaustive live deadline/error fault injection |
+| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs and absolute deadline (353 fixtures pass); container pass | Additional live fault injection and full admin/OAuth secret-path validation |
 | P0.2 | Explicit catalog, stable credentials, account Test separation, request-bound limiter, nondestructive route-aware query keys, cache/blob maintenance | C03 concurrent OAuth edge cases; historical request/job retention approval; live admin route/Reset check |
 | P1 | One encrypted OmniRoute connection, explicit search/fetch/rerank; live DuckDuckGo/Exa search and Jina read | Brave/Serper upstream keys absent; upstream multi-account and provider quota failover not observable with API-scoped credential; fresh cache bypass unsupported |
 | P2 | Priority/round-robin/quota-aware fixtures, shared cooldown and persistent observations, admin mode | Two real specialist accounts with actual auth/rate/plan fallback |

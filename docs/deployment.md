@@ -185,7 +185,7 @@ request is not an independent peer check; fixtures are not live entitlements.
 
 | Check | Observed result |
 |---|---|
-| Lock, lint, fixtures | `uv sync --frozen --extra dev`, `uv lock --check`, `uv run --frozen pytest -q` (352 passed, dependency deprecation warnings), `uv run --frozen ruff check src tests scripts`, `git diff --check` passed after the redaction change |
+| Lock, lint, fixtures | `uv sync --frozen --extra dev`, `uv lock --check`, `uv run --frozen pytest -q` (353 passed after absolute-deadline regression, dependency deprecation warnings), `uv run --frozen ruff check src tests scripts`, `git diff --check` passed after the redaction change |
 | Container and private HTTP | `docker compose config --quiet`, `docker compose build`, `docker compose up -d`, `docker compose ps`: healthy on loopback and `100.66.213.111`. Locked runtime package versions match FastMCP 4.0.10, MCP 2.3.0, SQLAlchemy 2.1.3, HTTPX 0.28.1; image contains attribution notice |
 | MCP discovery/auth | `scripts/mcp_smoke.py --token-file data/bootstrap.json` initialized/listed 17 tools; direct HTTP absent/invalid bearer returned 401; fixture tests cover revoked token, Origin and Host rejection |
 | OmniRoute | Installed local container package 3.8.51; private service URL configured from existing `.env`. Authenticated `/v1/search` catalog lists 20 IDs, not account entitlements. Explicit duckduckgo-free and exa-search live MCP search returned results with upstream provider and transport provenance. Brave/Serper requests returned HTTP 400 no configured upstream credential. Jina Reader live `web_read` returned source text/handle; provider mismatch, 401/429/quota/cache semantics covered in fixtures, not live account balancing |
