@@ -190,8 +190,10 @@ def mount_admin(
             ),
         }
 
-        async def on_form_prefill(self, data: dict[str, Any], model: Any) -> None:
-            data["account_selection"] = selection_mode(model.options)
+        async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+            data = await super().get_form_data_for_edit(obj)
+            data["account_selection"] = selection_mode(obj.options)
+            return data
 
         async def on_model_change(self, data: dict[str, Any], model: Any, is_created: bool,
                                   request: Request) -> None:
@@ -200,8 +202,6 @@ def mount_admin(
                 raise ValueError("Choose a supported account selection mode")
             if not isinstance(data.get("options"), dict):
                 raise ValueError("Provider options must be a JSON object")
-            if "selection_mode" in data["options"] and data["options"]["selection_mode"] != mode:
-                raise ValueError("Account selection mode conflicts with provider options")
             data["options"] = {**data["options"], "selection_mode": mode}
 
     class AccountView(ModelView, model=Account):
@@ -247,6 +247,15 @@ def mount_admin(
             pending = getattr(model, "_admin_pending_secret", None)
             if pending is not None:
                 await anyio.to_thread.run_sync(secret_store.set, model.id, pending)
+                # Credential reconnection does not erase prior cooldown/plan
+                # evidence; it permits a deliberate check on the new secret.
+                def reconnect() -> None:
+                    with db.session() as session:
+                        account = session.get(Account, model.id)
+                        if account is not None and account.credential != "disabled":
+                            account.credential = "ok"
+
+                await anyio.to_thread.run_sync(reconnect)
 
     class RoutingView(ModelView, model=Routing):
         name = "Routing"
