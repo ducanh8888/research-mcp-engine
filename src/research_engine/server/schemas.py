@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class Hit(BaseModel):
     model_config = ConfigDict(extra="allow")
     provider: str
+    id: str | None = None
     account: int | None = None
     rank: int = 1
     title: str = ""
@@ -103,7 +104,7 @@ class EditorialOutput(Envelope):
 
 
 class VerifyOutput(Envelope):
-    bibliographic: Literal["match", "mismatch", "unknown"]
+    bibliographic: Literal["match", "mismatch", "conflict", "unknown"]
     sources: list[dict[str, Any]]
     claim_evidence: list[dict[str, Any]] = Field(default_factory=list)
     citation_tallies: list[dict[str, Any]] = Field(default_factory=list)

@@ -200,7 +200,7 @@ async def test_http_failover_partial_coverage_and_handle_after_restart(tmp_path:
     db.initialize(providers)
     with db.session() as session:
         for provider in providers:
-            session.add(Account(provider=provider, label="HTTP fixture"))
+            session.add(Account(provider=provider, label="HTTP fixture", credential="ok"))
         session.add(Routing(capability="web_search", mode="fanout",
                             providers=[RateLimitedSearch.name, SyntheticSearch.name]))
         session.add(Routing(capability="web_read", mode="sequential",
