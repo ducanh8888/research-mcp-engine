@@ -23,6 +23,12 @@ async def request(client: httpx.AsyncClient, method: str, url: str, *, deadline:
     if retries < 0:
         raise ValueError("retries must not be negative")
     timeout = kwargs.pop("timeout", None)
+    headers = dict(kwargs.pop("headers", {}) or {})
+    # Some configured egress gateways advertise compressed bodies incorrectly.
+    # Identity encoding keeps provider JSON readable without changing content.
+    if not any(key.lower() == "accept-encoding" for key in headers):
+        headers["Accept-Encoding"] = "identity"
+    kwargs["headers"] = headers
     for attempt in range(retries + 1):
         remaining = deadline - time.monotonic()
         if remaining <= 0:

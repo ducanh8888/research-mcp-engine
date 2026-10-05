@@ -50,7 +50,10 @@ def _headers(ctx: CallContext) -> dict[str, str]:
     key = ctx.credentials.get("api_key")
     if not isinstance(key, str) or not key.strip():
         raise BridgeError(ErrorKind.AUTH, "OmniRoute service credential is not configured", scope="connection")
-    return {"Authorization": f"Bearer {key.strip()}", "Accept": "application/json"}
+    # The installed gateway occasionally advertises gzip for uncompressed
+    # search bodies; request identity encoding to keep stream decoding reliable.
+    return {"Authorization": f"Bearer {key.strip()}", "Accept": "application/json",
+            "Accept-Encoding": "identity"}
 
 
 def _retry_after(response: httpx.Response) -> float | None:

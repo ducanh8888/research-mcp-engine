@@ -22,7 +22,7 @@ def build_registry() -> dict[str, Provider]:
 
 
 ORDER = {
-    "web_search": ["omni:brave-search", "omni:serper-search"],
+    "web_search": ["omni:duckduckgo-free", "omni:exa-search", "omni:brave-search", "omni:serper-search"],
     "news_search": ["omni:brave-search", "omni:serper-search"],
     "web_read": ["omni:jina-reader", "trafilatura"],
     "site_map": ["firecrawl"], "site_crawl": ["firecrawl"],

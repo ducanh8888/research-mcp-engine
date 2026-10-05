@@ -23,6 +23,8 @@ PROVIDERS = [
     OmniRouteProvider("omni:brave-search", "brave-search", {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}),
     OmniRouteProvider("omni:serper-search", "serper-search", {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}),
     OmniRouteProvider("omni:jina-reader", "jina-reader", {Capability.WEB_READ}),
+    OmniRouteProvider("omni:duckduckgo-free", "duckduckgo-free", {Capability.WEB_SEARCH}),
+    OmniRouteProvider("omni:exa-search", "exa-search", {Capability.WEB_SEARCH}),
 ]
 
 __all__ = ["OmniRouteBridge", "OmniRouteConnection", "OmniRouteProvider", "PROVIDERS"]

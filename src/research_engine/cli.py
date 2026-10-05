@@ -19,14 +19,14 @@ import yaml
 from research_engine.config import load_config
 from research_engine.providers.registry import build_registry, default_routes
 from research_engine.storage.crypto import Cipher, SecretStore, hash_password
-from research_engine.storage.db import Account, ClientToken, Database, create_client_token
+from research_engine.storage.db import Account, ClientToken, Database, ProviderRow, create_client_token
 from sqlalchemy import select
 
 
-KEYS = {"EXA_API_KEY": "exa", "SERPER_API_KEY": "serper", "FIRECRAWL_API_KEY": "firecrawl",
-        "BRAVE_API_KEY": "brave", "TAVILY_API_KEY": "tavily", "JINA_API_KEY": "jina",
-        "GITHUB_TOKEN": "github", "OPENALEX_API_KEY": "openalex", "SEMANTIC_SCHOLAR_API_KEY": "semantic_scholar",
-        "CONSENSUS_API_KEY": "consensus_api", "ELICIT_API_KEY": "elicit_api"}
+KEYS = {"OMNI_ROUTE_API_KEY": "omniroute", "GITHUB_TOKEN": "github",
+        "OPENALEX_API_KEY": "openalex", "SEMANTIC_SCHOLAR_API_KEY": "semantic_scholar",
+        "CONSENSUS_API_KEY": "consensus_api", "ELICIT_API_KEY": "elicit_api",
+        "FIRECRAWL_API_KEY": "firecrawl"}
 
 
 def _write_private(path: Path, value: str) -> None:
@@ -70,6 +70,12 @@ def import_environment(settings, db: Database, registry: dict) -> list[str]:
             account_id = account.id
         store.set(account_id, {"api_key": key.strip()})
         imported.append(provider)
+    bridge_url = values.get("OMNI_ROUTE_API_URL")
+    if isinstance(bridge_url, str) and bridge_url.strip() and "omniroute" in registry:
+        with db.session() as session:
+            connection = session.get(ProviderRow, "omniroute")
+            if connection is not None and not connection.options.get("base_url"):
+                connection.options = {**connection.options, "base_url": bridge_url.strip()}
     return imported
 
 
