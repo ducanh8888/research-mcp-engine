@@ -117,7 +117,9 @@ def validate(cap: Capability, args: dict[str, Any]) -> dict[str, Any]:
 
 def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, Any]:
     """Return adapter input or an explicit unsupported-filter failure."""
-    request = {k: v for k, v in args.items() if v is not None and k not in {"cursor", "fresh", "deadline_s"}}
+    request = {k: v for k, v in args.items() if v is not None and k not in {"cursor", "deadline_s"}}
+    if not name.startswith("omni:"):
+        request.pop("fresh", None)
     if cap == Capability.SITE_CRAWL:
         request["depth"] = request.pop("max_depth", 2)
     if cap in {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}:

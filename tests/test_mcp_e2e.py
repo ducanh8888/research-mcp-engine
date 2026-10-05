@@ -219,9 +219,9 @@ async def test_http_failover_partial_coverage_and_handle_after_restart(tmp_path:
             assert SyntheticSearch.name in search["coverage"]["ok"]
             assert any(row["p"] == RateLimitedSearch.name for row in search["coverage"]["failed"])
             item = search["items"][0]
-            handle = item["h"]
+            handle = item["handle"]
             assert handle
-            assert item["u"] == "https://example.org/article?id=1"
+            assert item["url"] == "https://example.org/article?id=1"
             read = json.loads((await client.call_tool("web_read", {"target": handle, "fresh": True})).content[0].text)
             assert read["document"]["text"] == "Persisted fixture document evidence."
             assert history[0] == FailedRead.name

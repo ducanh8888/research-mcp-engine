@@ -72,6 +72,8 @@ class CallContext:
     deadline: float
     options: dict[str, Any] = field(default_factory=dict)
     mcp_manager: Any = None
+    limiter: Any = None
+    quota_group: str | None = None
     _targets: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -82,11 +84,21 @@ class CallContext:
         return max(0.0, self.deadline - time.monotonic())
 
     async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
-        if url in self._targets:
-            from research_engine.providers.url_guard import safe_fetch
-            return await safe_fetch(self.client, url, deadline=self.deadline, method=method, **kwargs)
-        from research_engine.providers.http import request
-        return await request(self.client, method, url, deadline=self.deadline, **kwargs)
+        async def send() -> httpx.Response:
+            if url in self._targets:
+                from research_engine.providers.url_guard import safe_fetch
+                return await safe_fetch(self.client, url, deadline=self.deadline, method=method, **kwargs)
+            from research_engine.providers.http import request
+            return await request(self.client, method, url, deadline=self.deadline, **kwargs)
+
+        if self.limiter is None:
+            return await send()
+        async with self.limiter.admit(
+            self.provider, self.account_id, quota_group=self.quota_group,
+            rate_limit_rps=self.options.get("rate_limit_rps"),
+            concurrency=self.options.get("concurrency"), deadline=self.deadline,
+        ):
+            return await send()
 
     async def validate_url(self, target: str) -> Any:
         from research_engine.providers.url_guard import validate_url

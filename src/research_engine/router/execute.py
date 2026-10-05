@@ -10,7 +10,6 @@ import json
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -25,6 +24,8 @@ from research_engine.providers.base import (
     Provider, ProviderError, Result,
 )
 from research_engine.providers.registry import build_registry, default_routes
+from research_engine.router.accounts import AccountSelector
+from research_engine.router.limiter import RequestLimiter
 from research_engine.router.requests import InvalidRequest, for_provider, validate
 from research_engine.router.results import validate_result
 from research_engine.storage.blobs import BlobStore
@@ -75,8 +76,8 @@ class Engine:
         self.http = http_client or httpx.AsyncClient(follow_redirects=False, trust_env=False,
                                                     limits=httpx.Limits(max_connections=50))
         self._owns_http = http_client is None
-        self._locks: dict[str, asyncio.Lock] = {}
-        self._last_call: dict[str, float] = {}
+        self.account_selector = AccountSelector(self.db)
+        self.limiter = RequestLimiter()
         from research_engine.providers.mcp.clients import AccountMCPClientManager
         self.mcp_manager = AccountMCPClientManager(self.secrets, self.settings.public_base_url)
         self.jobs = None
@@ -100,13 +101,42 @@ class Engine:
             row = session.get(ProviderRow, name)
             return {**self.providers[name].options, **(row.options if row else {})}
 
+    def _connection_account(self, name: str) -> tuple[int, dict[str, Any]]:
+        with self.db.session() as session:
+            row = session.scalar(select(Account).where(Account.provider == name, Account.enabled.is_(True))
+                                 .order_by(Account.priority, Account.id))
+            if row is None or row.credential != "ok" or (
+                row.cooldown_until is not None and row.cooldown_until > utcnow()
+            ):
+                raise ProviderError(ErrorKind.AUTH, "OmniRoute connection has no usable account")
+            provider = session.get(ProviderRow, name)
+            return row.id, dict(provider.options if provider else {})
+
     async def context(self, name: str, account_id: int, timeout_s: float = 30) -> CallContext:
-        credentials, options = await asyncio.gather(
-            asyncio.to_thread(self.secrets.get, account_id),
-            asyncio.to_thread(self._provider_options, name),
-        )
+        provider = self.providers[name]
+        connection = getattr(provider, "bridge_connection", None)
+        if connection:
+            connection_id, connection_options = await asyncio.to_thread(self._connection_account, connection)
+            credentials, options = await asyncio.gather(
+                asyncio.to_thread(self.secrets.get, connection_id),
+                asyncio.to_thread(self._provider_options, name),
+            )
+            options = {**connection_options, **options}
+            group = None
+        else:
+            credentials, options = await asyncio.gather(
+                asyncio.to_thread(self.secrets.get, account_id),
+                asyncio.to_thread(self._provider_options, name),
+            )
+
+            def group_for_account() -> str | None:
+                with self.db.session() as session:
+                    account = session.get(Account, account_id)
+                    return account.quota_group if account else None
+
+            group = await asyncio.to_thread(group_for_account)
         return CallContext(self.http, credentials, account_id, name, time.monotonic() + timeout_s,
-                           options, self.mcp_manager)
+                           options, self.mcp_manager, self.limiter if not connection else None, group)
 
     def _route(self, cap: Capability) -> tuple[str, list[str]]:
         with self.db.session() as session:
@@ -125,17 +155,16 @@ class Engine:
             return row.mode, names
 
     def _eligible(self, name: str, cap: Capability) -> tuple[list[tuple[int, str | None]], str]:
+        # Compatibility helper for operator probes; normal execution rotates one
+        # eligible specialist account at a time through AccountSelector.
         with self.db.session() as session:
             provider = session.get(ProviderRow, name)
             if provider is None or not provider.enabled:
                 return [], "provider disabled"
             accounts = list(session.scalars(select(Account).where(Account.provider == name)
                                              .order_by(Account.priority, Account.id)))
-            usable = [(row.id, row.quota_group) for row in accounts if row.enabled
-                      and row.credential == "ok"
-                      and (row.cooldown_until is None or row.cooldown_until <= utcnow())
-                      and cap.value not in (row.blocked_capabilities or {})]
-            return usable, "no usable account"
+        return [(row.id, row.quota_group) for row in accounts if
+                self.account_selector.eligible(name, cap, row.id)], "no usable account"
 
     def _attempt(self, request_id: str, name: str, account_id: int | None,
                  outcome: str, started: float, error: ProviderError | None = None) -> None:
@@ -147,73 +176,33 @@ class Engine:
 
     def _availability(self, account_id: int, cap: Capability, error: ProviderError | None,
                       result: Result | None = None) -> None:
-        with self.db.session() as session:
-            account = session.get(Account, account_id)
-            if account is None:
-                return
-            if error is None:
-                account.transient_failures = 0
-                account.credential = "ok"
-                if result is not None and result.quota_remaining is not None:
-                    account.quota_remaining = result.quota_remaining
-                    if result.quota_remaining <= 0:
-                        account.cooldown_until = utcnow() + timedelta(hours=1)
-                        account.cooldown_reason = "exhausted"
-                return
-            if error.kind == ErrorKind.AUTH:
-                account.credential = "needs_auth"
-            elif error.kind == ErrorKind.PLAN and error.block_capability:
-                account.blocked_capabilities = {**(account.blocked_capabilities or {}), cap.value: str(error)[:300]}
-            elif error.kind in {ErrorKind.RATE_LIMITED, ErrorKind.EXHAUSTED}:
-                until = error.reset_at or utcnow() + timedelta(seconds=error.retry_after or
-                                                              (60 if error.kind == ErrorKind.RATE_LIMITED else 3600))
-                group = [account]
-                if account.quota_group:
-                    group = list(session.scalars(select(Account).where(Account.quota_group == account.quota_group,
-                                                                       Account.provider == account.provider)))
-                for member in group:
-                    member.cooldown_until, member.cooldown_reason = until, error.kind.value
-            elif error.kind == ErrorKind.TRANSIENT:
-                account.transient_failures += 1
-                if account.transient_failures >= 3:
-                    account.cooldown_until = utcnow() + timedelta(seconds=min(300, 30 * 2 **
-                                                                             min(account.transient_failures - 3, 4)))
-                    account.cooldown_reason = "errors"
+        self.account_selector.record_availability(account_id, cap, error=error, result=result)
 
     async def _call(self, cap: Capability, args: dict, name: str, request_id: str,
-                    deadline: float, *, start: bool = False) -> Outcome:
+                    deadline: float, *, start: bool = False, owner: int | None = None) -> Outcome:
         try:
             adapter_args = for_provider(cap, args, name)
         except InvalidRequest as error:
             return Outcome(name, reason=f"unsupported_filter: {error}")
-        accounts, reason = await asyncio.to_thread(self._eligible, name, cap)
-        if time.monotonic() >= deadline:
-            return Outcome(name, reason="deadline exceeded", pending=True)
-        if not accounts:
-            return Outcome(name, reason=reason, skipped=True)
+        tried: set[int] = set()
         last_reason = "no usable account"
-        for account_id, group in accounts:
+        while True:
             if time.monotonic() >= deadline:
                 return Outcome(name, reason="deadline exceeded", pending=True)
-            current, _ = await asyncio.to_thread(self._eligible, name, cap)
-            if (account_id, group) not in current:
+            choice, reason = await asyncio.to_thread(self.account_selector.next_account, name, cap, excluded=tried)
+            if choice is None:
+                return Outcome(name, reason=last_reason if tried else reason, skipped=not tried)
+            account_id = choice.id
+            tried.add(account_id)
+            if not await asyncio.to_thread(self.account_selector.eligible, name, cap, account_id):
                 continue
             began = time.monotonic()
             context = None
             try:
                 async with asyncio.timeout_at(deadline):
                     context = await self.context(name, account_id, deadline - began)
-                    limiter_key = f"{name}:{group or account_id}"
-                    lock = self._locks.setdefault(limiter_key, asyncio.Lock())
-                    interval = float(context.options.get("min_interval_s", {
-                        "arxiv": 3, "semantic_scholar": 1, "jina": 3, "github": 2,
-                    }.get(name, 0)))
-                    if interval:
-                        async with lock:
-                            remaining = self._last_call.get(limiter_key, 0) + interval - time.monotonic()
-                            if remaining > 0:
-                                await asyncio.sleep(remaining)
-                            self._last_call[limiter_key] = time.monotonic()
+                    if not await asyncio.to_thread(self.account_selector.eligible, name, cap, account_id):
+                        continue
                     if start:
                         ref = await self.providers[name].start(cap, adapter_args, context)
                         if not isinstance(ref, str) or not ref:
@@ -231,6 +220,8 @@ class Engine:
                 error = ProviderError(ErrorKind.TRANSIENT, "Deadline exceeded", ambiguous_start=start)
                 await asyncio.to_thread(self._attempt, request_id, name, account_id, "deadline", began, error)
                 if start:
+                    if self.jobs is not None:
+                        await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
                                     request_id=request_id) from error
                 return Outcome(name, reason="deadline exceeded", pending=True)
@@ -239,9 +230,12 @@ class Engine:
                     for secret in context.credentials.values():
                         if isinstance(secret, str) and secret:
                             error.args = (str(error).replace(secret, "[redacted]"),)
-                await asyncio.to_thread(self._availability, account_id, cap, error)
+                if getattr(error, "scope", None) != "connection":
+                    await asyncio.to_thread(self._availability, account_id, cap, error)
                 await asyncio.to_thread(self._attempt, request_id, name, account_id, "failed", began, error)
                 if start and error.ambiguous_start:
+                    if self.jobs is not None:
+                        await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
                                     request_id=request_id) from error
                 last_reason = f"{error.kind.value}: {error}"
@@ -253,9 +247,10 @@ class Engine:
                 raise
             except Exception as error:
                 classified = ProviderError(ErrorKind.TRANSIENT, f"Adapter error ({type(error).__name__})")
-                await asyncio.to_thread(self._availability, account_id, cap, classified)
-                await asyncio.to_thread(self._attempt, request_id, name, account_id, "failed", began, classified)
+                await asyncio.to_thread(self._attempt, request_id, name, account_id, "internal", began, classified)
                 if start:
+                    if self.jobs is not None:
+                        await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
                                     request_id=request_id) from error
                 last_reason = str(classified)
@@ -327,8 +322,7 @@ class Engine:
         if cap in SEARCH_CAPABILITIES:
             merged = await asyncio.to_thread(merge_hits, [hit for result in results for hit in result.hits], limit)
             await asyncio.to_thread(self._persist_identities, merged)
-            return {"items": [{**item, "h": item["handle"], "t": item["title"], "u": item["url"]}
-                              for item in merged.items]}
+            return {"items": merged.items}
         if cap in {Capability.WEB_READ, Capability.PAPER_READ}:
             document = next((r.document for r in results if r.document is not None), None)
             return {"document": document.model_dump() if document else None}
@@ -342,9 +336,8 @@ class Engine:
                     assertions.setdefault(key, []).append(value)
             return {"records": records, "not_found": missing, "per_id_coverage": assertions}
         if cap == Capability.CITATION_GRAPH:
-            return {"nodes": [node for result in results for node in result.nodes],
-                    "edges": [edge for result in results for edge in result.edges],
-                    "truncated": any(result.truncated for result in results)}
+            from research_engine.merge.graph import merge_graphs
+            return await asyncio.to_thread(merge_graphs, results)
         if cap == Capability.EDITORIAL_CHECK:
             return {"checks": [check for result in results for check in result.checks]}
         if cap == Capability.CITATION_VERIFY:
@@ -504,7 +497,7 @@ class Engine:
         else:
             for name in names:
                 outcome = await self._call(cap, provider_args, name, request_id, deadline,
-                                           start=cap in ASYNC_CAPABILITIES)
+                                           start=cap in ASYNC_CAPABILITIES, owner=client_token_id)
                 outcomes.append(outcome)
                 if outcome.result is not None or outcome.upstream_ref is not None or outcome.pending:
                     break
