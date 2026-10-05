@@ -8,12 +8,13 @@ from typing import Any
 from urllib.parse import quote
 
 from research_engine.providers.base import Capability, ErrorKind, Hit, Provider, ProviderError, Result
-from .common import (abstract_document, arxiv_id, bibliographic, doi, graph_edge, graph_node,
-                     input_ids, json_request, limit, metadata_result, pdf_document)
+from .common import (abstract_document, arxiv_id, bibliographic, citation_result, doi, graph_edge,
+                     graph_node, input_ids, json_request, limit, metadata_result, pdf_document,
+                     related_mode, year_range)
 
 BASE = "https://api.semanticscholar.org/graph/v1"
 FIELDS = "paperId,title,externalIds,abstract,authors,year,venue,url,openAccessPdf,citationCount,referenceCount"
-GRAPH_FIELDS = "paperId,title,externalIds,year,contexts,intents,isInfluential"
+GRAPH_FIELDS = "paperId,title,externalIds,year"
 
 
 def target_id(target: str) -> str | None:
@@ -71,17 +72,60 @@ class SemanticScholarProvider(Provider):
 
     async def search(self, query: str, req: dict[str, Any], ctx: Any) -> Result:
         params = {"query": query, "limit": limit(req), "fields": FIELDS}
+        start, end = year_range(req)
         filters = req.get("filters") or {}
-        if isinstance(filters, dict):
-            params.update({key: value for key, value in filters.items() if key in
-                           {"year", "venue", "fieldsOfStudy", "publicationTypes", "openAccessPdf", "minCitationCount"}})
+        if not isinstance(filters, dict):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Semantic Scholar filters must be an object")
+        if (start is not None or end is not None) and "year" in filters:
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Use either public year bounds or the Semantic Scholar year filter")
+        params.update({key: value for key, value in filters.items() if key in
+                       {"year", "venue", "fieldsOfStudy", "publicationTypes", "openAccessPdf", "minCitationCount"}})
+        if start is not None or end is not None:
+            params["year"] = f"{start or ''}-{end or ''}"
         data = await json_request(ctx, "GET", BASE + "/paper/search", headers=self.headers(ctx), params=params)
         return Result(hits=[normalize(work, i) for i, work in enumerate(data.get("data", []), 1)],
                       raw={"total": data.get("total")})
 
     async def neighbors(self, target: str, side: str, count: int, ctx: Any) -> dict[str, Any]:
+        prefix = "citedPaper." if side == "references" else "citingPaper."
+        fields = ",".join(prefix + field for field in GRAPH_FIELDS.split(",")) + ",contexts,intents,isInfluential"
         return await json_request(ctx, "GET", BASE + "/paper/" + quote(target, safe=":/") + "/" + side,
-            headers=self.headers(ctx), params={"fields": GRAPH_FIELDS, "limit": min(100, count)}, not_found=True) or {}
+            headers=self.headers(ctx), params={"fields": fields, "limit": min(100, count)}, not_found=True) or {}
+
+    async def related(self, req: dict[str, Any], ctx: Any) -> Result:
+        mode = related_mode(req)
+        selected: list[Hit] = []
+        seen: set[str] = set()
+        coverage: dict[str, Any] = {}
+        for target in input_ids(req):
+            work = await self.fetch(target, ctx)
+            if not work:
+                coverage[target] = {"found": False, "provider": self.name, "reason": "not_found_or_unsupported"}
+                continue
+            paper_id = work["paperId"]
+            coverage[target] = {"found": True, "id": "s2:" + paper_id, "provider": self.name}
+            if mode == "similar":
+                data = await json_request(ctx, "GET", "https://api.semanticscholar.org/recommendations/v1/papers/forpaper/"
+                    + quote(paper_id, safe=""), headers=self.headers(ctx),
+                    params={"fields": FIELDS, "limit": limit(req)})
+                records = data.get("recommendedPapers", [])
+            else:
+                side = "citations" if mode == "citing" else "references"
+                data = await self.neighbors(paper_id, side, limit(req), ctx)
+                records = [item.get("citingPaper" if side == "citations" else "citedPaper")
+                           for item in data.get("data", [])]
+            for record in records:
+                if not record or not record.get("paperId"):
+                    continue
+                hit = normalize(record, len(selected) + 1)
+                if hit.id not in seen and hit.id != "s2:" + paper_id:
+                    hit.raw["related_seed"] = target
+                    hit.raw["related_mode"] = mode
+                    seen.add(hit.id)
+                    selected.append(hit)
+                if len(selected) >= limit(req):
+                    break
+        return Result(hits=selected, per_id_coverage=coverage)
 
     async def graph(self, req: dict[str, Any], ctx: Any) -> Result:
         budget = max(1, min(int(req.get("max_edges", 100)), 2000))
@@ -137,7 +181,16 @@ class SemanticScholarProvider(Provider):
             return await self.search(req["query"], req, ctx)
         if cap == Capability.CITATION_GRAPH:
             return await self.graph(req, ctx)
+        if cap == Capability.PAPER_RELATED:
+            return await self.related(req, ctx)
         if cap == Capability.PAPER_METADATA:
+            if req.get("citation") and not req.get("ids"):
+                citation = str(req["citation"])
+                if target_id(citation):
+                    work = await self.fetch(citation, ctx)
+                    return metadata_result([(citation, normalize(work) if work else None)], self.name)
+                results = await self.search(citation, {"limit": 5}, ctx)
+                return citation_result(citation, results.hits, self.name)
             ids = input_ids(req)
             valid = [(target, identifier) for target in ids if (identifier := target_id(target))]
             found = {}
@@ -157,7 +210,7 @@ class SemanticScholarProvider(Provider):
                 search = await self.search(str(target), {"limit": 1}, ctx)
                 return bibliographic(req, search.hits[0] if search.hits else None, self.name)
             result = bibliographic(req, normalize(work) if work else None, self.name)
-            if work and req.get("statement"):
+            if work and (req.get("claim") or req.get("statement")):
                 contexts = await self.neighbors(work["paperId"], "citations", 10, ctx)
                 for item in contexts.get("data", []):
                     source = item.get("citingPaper") or {}
@@ -165,16 +218,12 @@ class SemanticScholarProvider(Provider):
                         result.claim_evidence.append({"provider": self.name, "source_id": source.get("paperId"),
                             "source_url": "https://www.semanticscholar.org/paper/" + source.get("paperId", ""),
                             "cited_id": work["paperId"], "passage": passage,
+                            "requested_claim": req.get("claim") or req.get("statement"),
                             "source_classification": item.get("intents", []), "scope": "citation_context"})
             return result
         if not work:
             raise ProviderError(ErrorKind.TARGET, "Paper not found in Semantic Scholar")
         hit = normalize(work)
-        if cap == Capability.PAPER_RELATED:
-            data = await json_request(ctx, "GET", "https://api.semanticscholar.org/recommendations/v1/papers/forpaper/"
-                + quote(work["paperId"], safe=""), headers=self.headers(ctx),
-                params={"fields": FIELDS, "limit": limit(req)})
-            return Result(hits=[normalize(entry, i) for i, entry in enumerate(data.get("recommendedPapers", []), 1)])
         if cap == Capability.PAPER_READ:
             pdf = work.get("openAccessPdf") or {}
             if pdf.get("url"):

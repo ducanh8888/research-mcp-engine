@@ -7,7 +7,7 @@ from typing import Any
 
 from research_engine.providers.base import Capability, ErrorKind, Hit, Provider, ProviderError, Result
 from .common import (RequestSpacing, abstract_document, arxiv_id, bibliographic, input_ids,
-                     limit, metadata_result, pdf_document)
+                     limit, metadata_result, pdf_document, year_range)
 
 BASE = "https://export.arxiv.org/api/query"
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -82,8 +82,15 @@ class ArxivProvider(Provider):
     async def search(self, query: str, req: dict[str, Any], ctx: Any) -> Result:
         search = query if ":" in query else "all:" + query
         filters = req.get("filters") or {}
-        if isinstance(filters, dict) and filters.get("category"):
+        if not isinstance(filters, dict):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "arXiv filters must be an object")
+        if filters.get("category"):
             search += " AND cat:" + str(filters["category"])
+        start, end = year_range(req)
+        if start is not None or end is not None:
+            # arXiv exposes submission rather than publication dates; applying it
+            # would silently exclude older preprints published in the requested year.
+            raise ProviderError(ErrorKind.BAD_REQUEST, "arXiv has no equivalent publication-year search filter")
         return Result(hits=await self.query({"search_query": search, "start": 0,
                       "max_results": limit(req), "sortBy": "relevance", "sortOrder": "descending"}, ctx))
 
@@ -92,6 +99,9 @@ class ArxivProvider(Provider):
             return await self.search(req["query"], req, ctx)
         ids = input_ids(req)
         if cap == Capability.PAPER_METADATA:
+            if req.get("citation") and not req.get("ids") and not arxiv_id(str(req["citation"])):
+                return Result(per_id_coverage={str(req["citation"]): {"found": False, "providers": [self.name],
+                    "reason": "unsupported_citation_text"}})
             return metadata_result(await self.fetch_many(ids, ctx), self.name)
         target = ids[0] if ids else ""
         found = await self.fetch_many([target], ctx)

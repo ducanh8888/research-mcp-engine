@@ -12,6 +12,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import unquote
 
+from research_engine.merge.canonical import STRONG_IDS, normalize_ids
 from research_engine.providers.base import Document, ErrorKind, Hit, ProviderError, Result
 
 DOI_RE = re.compile(r"10\.\d{4,9}/[^\s<>\"{}]+", re.I)
@@ -73,6 +74,51 @@ def metadata_result(items: list[tuple[str, Hit | None]], provider: str) -> Resul
                   not_found=[key for key, hit in items if hit is None],
                   per_id_coverage={key: {"found": hit is not None, "providers": [provider]}
                                    for key, hit in items})
+
+
+def citation_result(citation: str, hits: list[Hit], provider: str) -> Result:
+    """Resolve text only with an exact title and publication year, never search rank.
+
+    A title/year pair is bibliographic evidence, not a guarantee of one identity:
+    multiple matching candidates (including conflicting identifiers) stay ambiguous.
+    No match is unknown rather than a definitive not-found lookup.
+    """
+    text = normal_text(citation)
+    years = set(re.findall(r"(?<!\d)(?:18|19|20)\d{2}(?!\d)", citation))
+    candidates = []
+    for hit in hits:
+        title = normal_text(hit.title)
+        if title and len(title) >= 12 and hit.year is not None and str(hit.year) in years:
+            if re.search(r"(?<!\w)" + re.escape(title) + r"(?!\w)", text):
+                candidates.append(hit)
+    unique = (candidates[0] if len(candidates) == 1 and
+              any(name in normalize_ids(candidates[0].ids) for name in STRONG_IDS) else None)
+    reason = "ambiguous" if len(candidates) > 1 else "insufficient_identifier" if candidates else "unresolved"
+    if unique:
+        result = metadata_result([(citation, unique)], provider)
+        result.per_id_coverage[citation]["resolution"] = "title_year"
+        return result
+    return Result(per_id_coverage={citation: {"found": False, "providers": [provider], "reason": reason}})
+
+
+def year_range(req: dict[str, Any]) -> tuple[int | None, int | None]:
+    """Validate the public publication-year bounds before issuing provider requests."""
+    start, end = req.get("year_from"), req.get("year_to")
+    for value in (start, end):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 1000 <= value <= 9999):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Publication years must be four-digit integers")
+    if start is not None and end is not None and start > end:
+        raise ProviderError(ErrorKind.BAD_REQUEST, "year_from must not exceed year_to")
+    return start, end
+
+
+def related_mode(req: dict[str, Any]) -> str:
+    mode = req.get("mode", "similar")
+    if mode not in {"similar", "citing", "cited"}:
+        raise ProviderError(ErrorKind.BAD_REQUEST, "Related mode must be similar, citing or cited")
+    if not input_ids(req):
+        raise ProviderError(ErrorKind.BAD_REQUEST, "Related papers require at least one seed")
+    return mode
 
 
 def normal_text(value: str) -> str:

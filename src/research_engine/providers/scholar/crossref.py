@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import quote
 
 from research_engine.providers.base import Capability, ErrorKind, Hit, Provider, ProviderError, Result
-from .common import bibliographic, doi, input_ids, json_request, limit, metadata_result, strip_tags
+from .common import bibliographic, citation_result, doi, input_ids, json_request, limit, metadata_result, strip_tags, year_range
 
 BASE = "https://api.crossref.org"
 
@@ -56,12 +56,21 @@ class CrossrefProvider(Provider):
     async def search(self, query: str, req: dict[str, Any], ctx: Any) -> Result:
         options = self.options_for(ctx)
         options["params"].update({"query.bibliographic": query, "rows": limit(req)})
+        start, end = year_range(req)
         filters = req.get("filters") or {}
-        if isinstance(filters, dict):
-            allowed = {"from-pub-date", "until-pub-date", "type", "has-abstract", "has-full-text"}
-            values = [key + ":" + str(value).lower() for key, value in filters.items() if key in allowed]
-            if values:
-                options["params"]["filter"] = ",".join(values)
+        if not isinstance(filters, dict):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Crossref filters must be an object")
+        allowed = {"from-pub-date", "until-pub-date", "type", "has-abstract", "has-full-text"}
+        values = [key + ":" + str(value).lower() for key, value in filters.items() if key in allowed]
+        if (start is not None and "from-pub-date" in filters or
+                end is not None and "until-pub-date" in filters):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Use either public year bounds or Crossref date filters")
+        if start is not None:
+            values.append(f"from-pub-date:{start}-01-01")
+        if end is not None:
+            values.append(f"until-pub-date:{end}-12-31")
+        if values:
+            options["params"]["filter"] = ",".join(values)
         data = await json_request(ctx, "GET", BASE + "/works", **options)
         message = data.get("message") or {}
         return Result(hits=[normalize(work, i) for i, work in enumerate(message.get("items", []), 1)],
@@ -71,6 +80,13 @@ class CrossrefProvider(Provider):
         if cap == Capability.PAPER_SEARCH:
             return await self.search(req["query"], req, ctx)
         if cap == Capability.PAPER_METADATA:
+            if req.get("citation") and not req.get("ids"):
+                citation = str(req["citation"])
+                if doi(citation):
+                    work = await self.fetch(citation, ctx)
+                    return metadata_result([(citation, normalize(work) if work else None)], self.name)
+                results = await self.search(citation, {"limit": 5}, ctx)
+                return citation_result(citation, results.hits, self.name)
             return metadata_result([(target, normalize(work) if (work := await self.fetch(target, ctx)) else None)
                                     for target in input_ids(req)], self.name)
         if cap == Capability.CITATION_VERIFY:

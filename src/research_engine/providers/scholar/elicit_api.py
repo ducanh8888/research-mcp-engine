@@ -17,7 +17,7 @@ from uuid import UUID
 import httpx
 
 from research_engine.providers.base import Capability, CallContext, ErrorKind, Hit, JobUpdate, Provider, ProviderError, Result
-from research_engine.providers.scholar.common import doi, json_request, limit, strip_tags
+from research_engine.providers.scholar.common import doi, json_request, limit, strip_tags, year_range
 from research_engine.providers.scholar.consensus_api import api_key
 
 BASE = "https://elicit.com/api/v2"
@@ -117,6 +117,9 @@ class ElicitAPIProvider(Provider):
         query = req.get("query")
         if not isinstance(query, str) or not query.strip() or len(query) > 2000:
             raise ProviderError(ErrorKind.BAD_REQUEST, "Elicit query must contain 1 to 2000 characters")
+        year_range(req)
+        if req.get("year_from") is not None or req.get("year_to") is not None:
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Elicit search has no verified publication-year filter")
         body: dict[str, Any] = {"query": query.strip(), "maxResults": limit(req)}
         for option, field in (("search_mode", "searchMode"), ("corpus", "corpus")):
             if ctx.options.get(option):

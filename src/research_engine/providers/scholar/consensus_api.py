@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from research_engine.providers.base import Capability, CallContext, ErrorKind, Hit, Provider, ProviderError, Result
-from research_engine.providers.scholar.common import doi, json_request, limit, strip_tags
+from research_engine.providers.scholar.common import doi, json_request, limit, strip_tags, year_range
 
 
 def api_key(ctx: CallContext) -> str:
@@ -65,12 +65,19 @@ class ConsensusAPIProvider(Provider):
         filters = req.get("filters") or {}
         if not isinstance(filters, dict):
             raise ProviderError(ErrorKind.BAD_REQUEST, "Consensus filters must be an object")
+        start, end = year_range(req)
+        if (start is not None and "year_min" in filters) or (end is not None and "year_max" in filters):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Use either public year bounds or Consensus year filters")
         supported = {"year_min", "year_max", "month_min", "month_max", "study_types", "human", "controlled",
                      "sample_size_min", "exclude_preprints", "sjr_min", "sjr_max", "citation_min", "medical_mode",
                      "clinical_guideline", "domain", "country", "journal_name", "publisher_name", "open_access"}
         for key in supported & filters.keys():
             value = filters[key]
             params[key] = ",".join(map(str, value)) if isinstance(value, list) else value
+        if start is not None:
+            params["year_min"] = start
+        if end is not None:
+            params["year_max"] = end
         data = await json_request(ctx, "GET", self.endpoint, headers={"x-api-key": api_key(ctx)}, params=params)
         if not isinstance(data, dict) or not isinstance(data.get("results"), list):
             raise ProviderError(ErrorKind.TRANSIENT, "Consensus response omitted results")

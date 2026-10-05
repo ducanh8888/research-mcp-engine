@@ -7,8 +7,8 @@ from typing import Any
 from urllib.parse import quote
 
 from research_engine.providers.base import Capability, ErrorKind, Hit, Provider, ProviderError, Result
-from .common import (abstract_document, bibliographic, doi, graph_edge, graph_node, input_ids,
-                     json_request, limit, metadata_result, pdf_document)
+from .common import (abstract_document, bibliographic, citation_result, doi, graph_edge, graph_node,
+                     input_ids, json_request, limit, metadata_result, pdf_document, related_mode, year_range)
 
 BASE = "https://api.openalex.org"
 
@@ -82,15 +82,24 @@ class OpenAlexProvider(Provider):
 
     async def search(self, query: str, req: dict[str, Any], ctx: Any) -> Result:
         params = self.params(ctx, search=query, **{"per-page": limit(req)})
+        start, end = year_range(req)
         filters = req.get("filters") or {}
-        if isinstance(filters, dict):
-            choices = []
-            for key in ("from_publication_date", "to_publication_date", "publication_year", "is_retracted",
-                        "type", "open_access.is_oa"):
-                if key in filters:
-                    choices.append(key + ":" + str(filters[key]).lower())
-            if choices:
-                params["filter"] = ",".join(choices)
+        if not isinstance(filters, dict):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "OpenAlex filters must be an object")
+        choices = []
+        for key in ("from_publication_date", "to_publication_date", "publication_year", "is_retracted",
+                    "type", "open_access.is_oa"):
+            if key in filters:
+                choices.append(key + ":" + str(filters[key]).lower())
+        if (start is not None and "from_publication_date" in filters or
+                end is not None and "to_publication_date" in filters):
+            raise ProviderError(ErrorKind.BAD_REQUEST, "Use either public year bounds or OpenAlex date filters")
+        if start is not None:
+            choices.append(f"from_publication_date:{start}-01-01")
+        if end is not None:
+            choices.append(f"to_publication_date:{end}-12-31")
+        if choices:
+            params["filter"] = ",".join(choices)
         data = await json_request(ctx, "GET", BASE + "/works", params=params)
         return Result(hits=[normalize(work, i) for i, work in enumerate(data.get("results", []), 1)],
                       raw={"total": data.get("meta", {}).get("count")})
@@ -125,6 +134,39 @@ class OpenAlexProvider(Provider):
                         if value and value.lower() == wanted.lower():
                             found[target] = hit
         return metadata_result([(target, found.get(target)) for target in ids], self.name)
+
+    async def related(self, req: dict[str, Any], ctx: Any) -> Result:
+        mode = related_mode(req)
+        selected: list[Hit] = []
+        seen: set[str] = set()
+        coverage: dict[str, Any] = {}
+        for target in input_ids(req):
+            work = await self.fetch(target, ctx)
+            if not work:
+                coverage[target] = {"found": False, "provider": self.name, "reason": "not_found_or_unsupported"}
+                continue
+            seed = normalize(work)
+            coverage[target] = {"found": True, "id": seed.id, "provider": self.name}
+            if mode in {"similar", "cited"}:
+                key = "related_works" if mode == "similar" else "referenced_works"
+                records = []
+                for identifier in work.get(key, [])[:limit(req)]:
+                    if record := await self.fetch(identifier, ctx):
+                        records.append(record)
+            else:
+                data = await json_request(ctx, "GET", BASE + "/works", params=self.params(ctx,
+                    filter="cites:" + seed.ids["openalex"], **{"per-page": limit(req)}))
+                records = data.get("results", [])
+            for record in records:
+                hit = normalize(record, len(selected) + 1)
+                if hit.id not in seen and hit.id != seed.id:
+                    seen.add(hit.id)
+                    hit.raw["related_seed"] = target
+                    hit.raw["related_mode"] = mode
+                    selected.append(hit)
+                if len(selected) >= limit(req):
+                    break
+        return Result(hits=selected, per_id_coverage=coverage)
 
     async def graph(self, req: dict[str, Any], ctx: Any) -> Result:
         max_edges = max(1, min(int(req.get("max_edges", 100)), 2000))
@@ -186,6 +228,8 @@ class OpenAlexProvider(Provider):
             return await self.search(req["query"], req, ctx)
         if cap == Capability.CITATION_GRAPH:
             return await self.graph(req, ctx)
+        if cap == Capability.PAPER_RELATED:
+            return await self.related(req, ctx)
         if cap == Capability.CITATION_VERIFY:
             citation = req.get("citation", "")
             value = (citation.get("doi") or citation.get("id") or citation.get("title", "")) if isinstance(citation, dict) else citation
@@ -196,6 +240,13 @@ class OpenAlexProvider(Provider):
             return bibliographic(req, normalize(work), self.name)
         ids = input_ids(req)
         if cap == Capability.PAPER_METADATA:
+            if req.get("citation") and not req.get("ids"):
+                citation = str(req["citation"])
+                if target_id(citation):
+                    work = await self.fetch(citation, ctx)
+                    return metadata_result([(citation, normalize(work) if work else None)], self.name)
+                results = await self.search(citation, {"limit": 5}, ctx)
+                return citation_result(citation, results.hits, self.name)
             return await self.metadata(ids, ctx)
         if cap == Capability.EDITORIAL_CHECK:
             checks = []
@@ -212,13 +263,6 @@ class OpenAlexProvider(Provider):
         if not work:
             raise ProviderError(ErrorKind.TARGET, "Paper not found in OpenAlex")
         hit = normalize(work)
-        if cap == Capability.PAPER_RELATED:
-            related = []
-            for identifier in work.get("related_works", [])[:limit(req)]:
-                record = await self.fetch(identifier, ctx)
-                if record:
-                    related.append(normalize(record, len(related) + 1))
-            return Result(hits=related)
         if cap == Capability.PAPER_READ:
             location = work.get("best_oa_location") or {}
             url = location.get("pdf_url")

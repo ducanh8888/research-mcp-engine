@@ -42,6 +42,9 @@ class SciteRestProvider(Provider):
 
     async def call(self, cap: Capability, req: dict[str, Any], ctx: Any) -> Result:
         if cap == Capability.PAPER_METADATA:
+            if req.get("citation") and not req.get("ids") and not doi(str(req["citation"])):
+                return Result(per_id_coverage={str(req["citation"]): {"found": False, "providers": [self.name],
+                    "reason": "unsupported_citation_text"}})
             return metadata_result([(target, normalize(work) if (work := await self.fetch(target, ctx)) else None)
                                     for target in input_ids(req)], self.name)
         if cap == Capability.CITATION_VERIFY:
