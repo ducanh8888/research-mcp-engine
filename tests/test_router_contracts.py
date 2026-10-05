@@ -209,6 +209,29 @@ async def test_fault_and_cancellation_finalize_correlated_requests(tmp_path):
         await engine.stop()
 
 
+async def test_whole_request_timeout_covers_slow_cache_step(tmp_path):
+    provider = Stub("cache_timeout", {Capability.WEB_SEARCH}, Result(hits=[]))
+    engine = engine_with(tmp_path, [provider], Capability.WEB_SEARCH)
+    original = engine.cache.get_query
+
+    def slow_cache(*args, **kwargs):
+        import time
+        time.sleep(5.5)
+        return original(*args, **kwargs)
+
+    engine.cache.get_query = slow_cache
+    try:
+        with pytest.raises(ToolError) as failure:
+            await engine.execute("web_search", {"query": "delayed-cache", "deadline_s": .01})
+        assert failure.value.code == "NO_PROVIDER_AVAILABLE"
+        with engine.db.session() as session:
+            row = session.get(RequestRow, failure.value.request_id)
+            assert row.status == "error" and row.finished_at is not None
+        assert not provider.calls
+    finally:
+        await engine.stop()
+
+
 async def test_response_bounds_and_deadline_clamp(tmp_path):
     provider = Stub("huge", {Capability.PAPER_METADATA}, Result(
         records=[{"requested_id": "A", "provider": "huge", "raw": "x" * 4000}],
