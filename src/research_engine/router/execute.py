@@ -138,6 +138,35 @@ class Engine:
         return CallContext(self.http, credentials, account_id, name, time.monotonic() + timeout_s,
                            options, self.mcp_manager, self.limiter if not connection else None, group)
 
+    def _rerank_options(self) -> dict[str, Any]:
+        with self.db.session() as session:
+            row = session.get(ProviderRow, "omniroute")
+            value = (row.options or {}).get("rerank", {}) if row else {}
+            if not isinstance(value, dict):
+                raise ValueError("Rerank settings must be a JSON object")
+            return dict(value)
+
+    async def _rerank_items(self, query: str, items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict]:
+        from research_engine.merge.rerank import rerank
+        from research_engine.providers.omniroute.bridge import OmniRouteBridge
+
+        options = await asyncio.to_thread(self._rerank_options)
+        diagnostics: dict[str, Any] = {}
+        config = {"backend": "omniroute", **options, "diagnostics": diagnostics}
+        backend = str(config.get("backend", "omniroute")).lower()
+        context = None
+        bridge = None
+        if config.get("enabled") and backend == "omniroute":
+            try:
+                connection_id, _ = await asyncio.to_thread(self._connection_account, "omniroute")
+                context = await self.context("omniroute", connection_id,
+                                             float(config.get("timeout_s", 8)))
+                bridge = OmniRouteBridge()
+            except (ProviderError, ValueError):
+                pass
+        ranked = await rerank(query, items, config, bridge=bridge, context=context)
+        return ranked, diagnostics
+
     def _route(self, cap: Capability) -> tuple[str, list[str]]:
         with self.db.session() as session:
             row = session.get(Routing, cap.value)
@@ -517,6 +546,11 @@ class Engine:
                                          chosen.upstream_ref, client_token_id)
             return {**job.model_dump(), "request_id": request_id, "coverage": coverage}
         payload = await self._payload(cap, [o.result for o in succeeded], args.get("limit", 8))
+        if cap in SEARCH_CAPABILITIES and len(payload.get("items", [])) > 1:
+            ranked, diagnostics = await self._rerank_items(args.get("query", ""), payload["items"])
+            payload["items"] = ranked
+            if diagnostics.get("status") not in {None, "disabled"}:
+                payload["rerank"] = diagnostics
         if metadata is not None:
             records, unresolved, evidence = metadata
             # An unfinished provider leaves its attempted IDs unknown; it does not

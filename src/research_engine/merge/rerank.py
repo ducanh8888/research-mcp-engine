@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import os
 from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
@@ -20,9 +19,6 @@ log = logging.getLogger(__name__)
 
 _BACKENDS = {
     "infinity": {"endpoint": "http://127.0.0.1:7997/rerank", "model": "BAAI/bge-reranker-v2-m3"},
-    "jina": {"endpoint": "https://api.jina.ai/v1/rerank", "model": "jina-reranker-v2-base-multilingual", "key_env": "JINA_API_KEY"},
-    "cohere": {"endpoint": "https://api.cohere.com/v2/rerank", "model": "rerank-v3.5", "key_env": "COHERE_API_KEY"},
-    "voyage": {"endpoint": "https://api.voyageai.com/v1/rerank", "model": "rerank-2.5", "key_env": "VOYAGE_API_KEY"},
 }
 LOCAL_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 
@@ -89,31 +85,25 @@ async def _http_ranking(
     backend: str, query: str, documents: list[str], options: Mapping[str, Any], client: httpx.AsyncClient,
 ) -> list[dict[str, Any]]:
     defaults = _BACKENDS[backend]
-    key_env = str(options.get("api_key_env") or defaults.get("key_env") or "")
-    key = options.get("api_key") or (os.environ.get(key_env) if key_env else None)
-    if backend != "infinity" and not key:
-        raise ValueError(f"Missing API key for {backend} reranking")
-    headers = {"Authorization": f"Bearer {key}"} if key else {}
     payload = {
         "model": options.get("model") or defaults["model"], "query": query,
         "documents": documents, "top_n": len(documents),
     }
-    if backend == "jina":
-        payload["return_documents"] = False
     response = await client.post(
-        str(options.get("endpoint") or defaults["endpoint"]), json=payload, headers=headers,
+        str(options.get("endpoint") or defaults["endpoint"]), json=payload,
         timeout=float(options.get("timeout_s", 8)),
     )
     response.raise_for_status()
     data = response.json()
     if not isinstance(data, Mapping):
         raise ValueError("Malformed reranker response")
-    return data.get("data" if backend == "voyage" else "results")
+    return data.get("results")
 
 
 async def rerank(
     query: str, items: list[dict[str, Any]], settings: Any = None,
     *, options: Mapping[str, Any] | None = None, client: httpx.AsyncClient | None = None,
+    bridge: Any = None, context: Any = None,
 ) -> list[dict[str, Any]]:
     """Reorder only the top N; preserve the tail and every original evidence item.
 
@@ -145,6 +135,13 @@ async def rerank(
         async with asyncio.timeout(timeout):
             if backend in {"fastembed", "local"}:
                 ranking = await asyncio.to_thread(_local_ranking, query, documents, config)
+            elif backend == "omniroute":
+                if bridge is None or context is None:
+                    raise ValueError("OmniRoute rerank connection is unavailable")
+                model = config.get("model")
+                if not isinstance(model, str) or "/" not in model:
+                    raise ValueError("OmniRoute rerank requires an explicit provider/model")
+                ranking = await bridge.rerank(model, query, documents, context, top_n=count)
             elif backend in _BACKENDS:
                 if client is not None:
                     ranking = await _http_ranking(backend, query, documents, config, client)

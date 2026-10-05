@@ -13,26 +13,25 @@ def items(count=4):
     return [{"handle": f"url:{number}", "title": f"Title {number}", "snippet": f"Evidence {number}"} for number in range(count)]
 
 
-@pytest.mark.parametrize("backend", ["infinity", "jina", "cohere", "voyage"])
-async def test_api_backends_reorder_top_n_preserve_tail_and_sources(backend):
+async def test_local_infinity_backend_reorders_without_api_credentials():
     original = items()
 
     def transport(request):
         payload = json.loads(request.content)
         assert len(payload["documents"]) == 3
         assert payload["top_n"] == 3
-        assert request.headers["Authorization"] == "Bearer fixture-key"
+        assert "Authorization" not in request.headers
         ranking = [{"index": index, "relevance_score": 1 - position / 10} for position, index in enumerate([2, 0, 1])]
-        return httpx.Response(200, json={"data" if backend == "voyage" else "results": ranking})
+        return httpx.Response(200, json={"results": ranking})
 
     diagnostics = {}
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
         result = await rerank("query", original, {
-            "enabled": True, "backend": backend, "api_key": "fixture-key", "top_n": 3, "diagnostics": diagnostics,
+            "enabled": True, "backend": "infinity", "top_n": 3, "diagnostics": diagnostics,
         }, client=client)
     assert result == [original[2], original[0], original[1], original[3]]
     assert result[0] is original[2]
-    assert diagnostics == {"backend": backend, "status": "applied", "documents": 3}
+    assert diagnostics == {"backend": "infinity", "status": "applied", "documents": 3}
 
 
 @pytest.mark.parametrize("ranking", [
