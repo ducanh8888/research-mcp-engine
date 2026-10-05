@@ -164,12 +164,15 @@ class ElicitAPIProvider(Provider):
                 if source in req:
                     body[field] = req[source]
         try:
-            data = await json_request(ctx, "POST", f"{BASE}/sessions/{kind}", headers=self._headers(ctx), json=body)
+            data = await json_request(ctx, "POST", f"{BASE}/sessions/{kind}", headers=self._headers(ctx),
+                                      json=body, retries=0)
         except (httpx.RequestError, TimeoutError) as exc:
             raise ProviderError(ErrorKind.TRANSIENT, "Elicit session creation was interrupted; creation is uncertain",
                                 ambiguous_start=True) from exc
         except ProviderError as exc:
-            if exc.kind == ErrorKind.TRANSIENT:
+            if exc.kind == ErrorKind.TRANSIENT or exc.status_code == 408:
+                # A 408 does not prove the upstream did not create the session.
+                exc.kind = ErrorKind.TRANSIENT
                 exc.ambiguous_start = True
             raise
         if not isinstance(data, dict) or not data.get("sessionId"):

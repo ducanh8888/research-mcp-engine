@@ -15,14 +15,21 @@ from research_engine.providers.base import ErrorKind, ProviderError
 
 
 async def request(client: httpx.AsyncClient, method: str, url: str, *, deadline: float,
-                  retries: int = 1, max_bytes: int = 16 * 1024 * 1024, **kwargs) -> httpx.Response:
+                  retries: int | None = None, max_bytes: int = 16 * 1024 * 1024, **kwargs) -> httpx.Response:
+    # Only read methods are retried by default. A POST start may have succeeded
+    # upstream even when its response is lost or the server returns a 5xx.
+    if retries is None:
+        retries = 1 if method.upper() in {"GET", "HEAD", "OPTIONS"} else 0
+    if retries < 0:
+        raise ValueError("retries must not be negative")
+    timeout = kwargs.pop("timeout", None)
     for attempt in range(retries + 1):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Request deadline exceeded")
         try:
             async with asyncio.timeout_at(deadline):
-                async with client.stream(method, url, timeout=kwargs.pop("timeout", remaining),
+                async with client.stream(method, url, timeout=remaining if timeout is None else timeout,
                                          follow_redirects=False, **kwargs) as streamed:
                     chunks, total = [], 0
                     async for chunk in streamed.aiter_bytes():

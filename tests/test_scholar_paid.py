@@ -32,6 +32,10 @@ class Context:
         self.client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
 
     async def request(self, method, url, **kwargs):
+        # Context.request consumes transport retry policy before HTTPX sees it.
+        retries = kwargs.pop("retries", None)
+        if retries is not None:
+            assert retries == 0 and method == "POST" and "/sessions/" in url
         return await self.client.request(method, url, **kwargs)
 
     async def validate_url(self, url):

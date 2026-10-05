@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
-import inspect
 import json
 from typing import Any
 
@@ -30,10 +30,17 @@ HOSTED_SCOPES = {
 
 
 class _NoForwardTransport(StreamableHttpTransport):
-    """Static account headers only, adapted from mcp-gateway upstream.py."""
+    """Never forward an inbound client bearer token, even if proxy options change."""
 
-    def _prepare_headers(self) -> dict[str, str]:
-        return dict(self.headers or {})
+    @contextlib.asynccontextmanager
+    async def connect_session(self, *, transport_options=None, **session_kwargs):
+        from fastmcp.client.transports.base import TransportOptions
+
+        options = transport_options or TransportOptions()
+        if options.forward_incoming_headers:
+            raise ValueError("Upstream MCP transport cannot forward incoming headers")
+        async with super().connect_session(transport_options=options, **session_kwargs) as session:
+            yield session
 
 
 class AccountMCPClientManager:
@@ -93,9 +100,9 @@ class AccountMCPClientManager:
         # CIMD URLs must be supplied explicitly; private engine URLs are not
         # assumed to be reachable by a provider's authorization server.
         if options.get("client_metadata_url"):
-            if "client_metadata_url" not in inspect.signature(NonSerializingOAuthClientProvider.__mro__[1]).parameters:
-                raise ValueError("The installed MCP SDK does not support client metadata documents")
             kwargs["client_metadata_url"] = options["client_metadata_url"]
+        if provider == "undermind" and not (kwargs.get("client_metadata_url") or static_info):
+            raise ValueError("Undermind OAuth requires a published HTTPS client metadata URL or a registered client")
         return NonSerializingOAuthClientProvider(**kwargs)
 
     def _build_client(self, account_id: int, url: str, options: dict, *, force: bool = False) -> Any:
@@ -143,7 +150,9 @@ class AccountMCPClientManager:
     ) -> Any:
         client = await self.get_client(account_id, url, credentials)
         async with asyncio.timeout(timeout), client:
-            return await client.call_tool(name, arguments)
+            # Raw result preserves is_error and structured_content for the
+            # provider-specific normalizer; the convenience API raises instead.
+            return await client.call_tool_mcp(name, arguments, timeout=timeout)
 
     async def start_oauth(self, account_id: int, url: str, credentials: dict | None = None, *, force: bool = True) -> dict:
         options = dict(await self.credentials(account_id) if credentials is None else credentials)

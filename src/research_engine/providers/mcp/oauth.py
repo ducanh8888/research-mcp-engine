@@ -15,12 +15,7 @@ from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
 from mcp.client.auth import OAuthClientProvider
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-
-try:
-    from mcp.shared.auth import AuthorizationCodeResult
-except ImportError:  # MCP SDK 1.x returns a (code, state) tuple.
-    AuthorizationCodeResult = None  # type: ignore[assignment,misc]
+from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthToken
 
 
 class SecretStorage(Protocol):
@@ -137,16 +132,6 @@ class NonSerializingOAuthClientProvider(OAuthClientProvider):
         if self.context.current_tokens is not None:
             self.context.update_token_expiry(self.context.current_tokens)
 
-    async def _exchange_token_authorization_code(self, *args: Any, **kwargs: Any) -> Any:
-        request = await super()._exchange_token_authorization_code(*args, **kwargs)
-        request.headers["accept"] = "application/json"
-        return request
-
-    async def _refresh_token(self, *args: Any, **kwargs: Any) -> Any:
-        request = await super()._refresh_token(*args, **kwargs)
-        request.headers["accept"] = "application/json"
-        return request
-
     async def _drive(self, flow: AsyncGenerator, original_request: Any) -> AsyncGenerator:
         try:
             outbound = await anext(flow)
@@ -163,21 +148,6 @@ class NonSerializingOAuthClientProvider(OAuthClientProvider):
 
     async def _auth_flow(self, request: Any) -> AsyncGenerator:
         flow = self._drive(super()._auth_flow(request), request)
-        try:
-            outbound = await anext(flow)
-            while True:
-                response = yield outbound
-                outbound = await flow.asend(response)
-        except StopAsyncIteration:
-            return
-        finally:
-            await flow.aclose()
-
-    async def async_auth_flow(self, request: Any) -> AsyncGenerator:
-        if hasattr(OAuthClientProvider, "_auth_flow"):
-            flow = super().async_auth_flow(request)
-        else:
-            flow = self._drive(super().async_auth_flow(request), request)
         try:
             outbound = await anext(flow)
             while True:
@@ -280,11 +250,7 @@ class OAuthFlowCoordinator:
         if error or not code:
             flow.code.set_exception(NotConnectedError("Upstream authorization was denied"))
             return {"account_id": flow.account_id, "status": "failed"}
-        if AuthorizationCodeResult is None:
-            response: Any = (code, state)
-        else:
-            response = AuthorizationCodeResult(code=code, state=state, iss=issuer)
-        flow.code.set_result(response)
+        flow.code.set_result(AuthorizationCodeResult(code=code, state=state, iss=issuer))
         return {"account_id": flow.account_id, "status": "exchanging_token"}
 
     def status(self, account_id: int) -> dict:
