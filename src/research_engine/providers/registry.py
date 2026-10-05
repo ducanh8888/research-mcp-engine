@@ -8,9 +8,10 @@ from research_engine.providers.base import ASYNC_CAPABILITIES, Capability, Provi
 def build_registry() -> dict[str, Provider]:
     from research_engine.providers import scholar, web
     from research_engine.providers.dev import github
+    from research_engine.providers.mcp import adapters
 
     registry: dict[str, Provider] = {}
-    for module in (web, github, scholar):
+    for module in (web, github, scholar, adapters):
         for entry in module.PROVIDERS:
             provider = entry() if isinstance(entry, type) else entry
             if provider.name in registry:
