@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from research_engine.providers.base import Capability as C, ErrorKind, ProviderError
-from research_engine.providers.scholar.arxiv import ArxivProvider, SPACING
+from research_engine.providers.scholar.arxiv import ArxivProvider
 from research_engine.providers.scholar.common import bibliographic, doi, json_request
 from research_engine.providers.scholar.crossref import CrossrefProvider, normalize as crossref_hit
 from research_engine.providers.scholar.openalex import OpenAlexProvider, inverted_abstract
@@ -198,9 +198,7 @@ ARXIV_FEED = '''<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://ar
  </entry></feed>'''
 
 
-async def test_arxiv_exact_versions_and_publication_relations(context, monkeypatch):
-    monkeypatch.setattr(SPACING, "interval", 0)
-    monkeypatch.setattr(SPACING, "last", 0)
+async def test_arxiv_exact_versions_and_publication_relations(context):
     result = await ArxivProvider().call(C.PAPER_METADATA,
         {"ids": ["1706.03762", "1706.03762v2", "1706.03762v3"]},
         context(lambda _: httpx.Response(200, text=ARXIV_FEED), "arxiv"))

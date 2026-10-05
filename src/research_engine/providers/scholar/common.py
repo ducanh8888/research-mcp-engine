@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import html
 import re
-import time
 import unicodedata
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -226,23 +224,3 @@ def graph_edge(source: Hit | dict[str, Any], target: Hit | dict[str, Any], provi
 def graph_node(hit: Hit, provider: str) -> dict[str, Any]:
     return {"id": hit.id, "ids": hit.ids, "title": hit.title, "year": hit.year,
             "providers": [provider]}
-
-
-class RequestSpacing:
-    """One process-wide bucket per endpoint, including all accounts (arXiv ToU)."""
-
-    def __init__(self, interval: float):
-        self.interval = interval
-        self.lock = asyncio.Lock()
-        self.last = 0.0
-
-    async def request(self, ctx: Any, method: str, url: str, **kwargs: Any) -> Any:
-        async with self.lock:
-            wait = max(0.0, self.last + self.interval - time.monotonic())
-            if wait >= ctx.remaining():
-                raise ProviderError(ErrorKind.RATE_LIMITED, "Provider request spacing exceeds deadline",
-                                    retry_after=wait)
-            if wait:
-                await asyncio.sleep(wait)
-            self.last = time.monotonic()
-            return await ctx.request(method, url, **kwargs)

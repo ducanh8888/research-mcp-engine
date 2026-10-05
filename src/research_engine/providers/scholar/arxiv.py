@@ -6,13 +6,12 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from research_engine.providers.base import Capability, ErrorKind, Hit, Provider, ProviderError, Result
-from .common import (RequestSpacing, abstract_document, arxiv_id, bibliographic, input_ids,
+from .common import (abstract_document, arxiv_id, bibliographic, input_ids,
                      limit, metadata_result, pdf_document, year_range)
 
 BASE = "https://export.arxiv.org/api/query"
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV = "{http://arxiv.org/schemas/atom}"
-SPACING = RequestSpacing(3.0)
 
 
 def normalize(entry: ET.Element, rank: int = 1) -> Hit:
@@ -50,7 +49,7 @@ class ArxivProvider(Provider):
         headers = {"User-Agent": "research-engine/0.1"}
         if ctx.options.get("mailto"):
             headers["User-Agent"] += " (mailto:" + str(ctx.options["mailto"]) + ")"
-        response = await SPACING.request(ctx, "GET", BASE, params=params, headers=headers)
+        response = await ctx.request("GET", BASE, params=params, headers=headers)
         if response.status_code >= 400:
             kind = ErrorKind.RATE_LIMITED if response.status_code == 429 else ErrorKind.TRANSIENT
             raise ProviderError(kind, f"arXiv returned HTTP {response.status_code}", status_code=response.status_code)
