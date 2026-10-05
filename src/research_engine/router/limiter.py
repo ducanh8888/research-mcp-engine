@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ class RequestLimiter:
 
     def __init__(self, *, clock: Callable[[], float] | None = None,
                  sleep: Callable[[float], Any] | None = None):
-        self._clock = clock or asyncio.get_running_loop().time
+        self._clock = clock or time.monotonic
         self._sleep = sleep or asyncio.sleep
         self._buckets: dict[tuple[str, str], _Bucket] = {}
 
