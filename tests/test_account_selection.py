@@ -99,19 +99,18 @@ def test_quota_aware_uses_only_fresh_comparable_observations(pool):
     selector.record_availability(first, Capability.PAPER_SEARCH, observation=QuotaObservation(
         3, "requests", "monthly", now, reset_at,
     ))
-    selector.record_availability(second, Capability.PAPER_SEARCH, observation=QuotaObservation(
-        9, "requests", "monthly", now, reset_at,
-    ))
     assert selector.next_account("specialist", Capability.PAPER_SEARCH)[0].id == first
     selector.record_availability(third, Capability.PAPER_SEARCH, observation=QuotaObservation(
         5, "requests", "monthly", now, reset_at,
     ))
-    assert selector.next_account("specialist", Capability.PAPER_SEARCH)[0].id == second
-    selector.record_availability(second, Capability.PAPER_SEARCH, observation=QuotaObservation(
+    assert selector.next_account("specialist", Capability.PAPER_SEARCH)[0].id == third
+    with db.session() as session:
+        assert session.get(Account, second).quota_remaining == 3
+    selector.record_availability(third, Capability.PAPER_SEARCH, observation=QuotaObservation(
         99, "tokens", "monthly", now, reset_at,
     ))
     assert selector.next_account("specialist", Capability.PAPER_SEARCH)[0].id == first
-    selector.record_availability(second, Capability.PAPER_SEARCH, observation=QuotaObservation(
+    selector.record_availability(third, Capability.PAPER_SEARCH, observation=QuotaObservation(
         99, "requests", "monthly", now - timedelta(minutes=6), reset_at,
     ))
     assert selector.next_account("specialist", Capability.PAPER_SEARCH)[0].id == first

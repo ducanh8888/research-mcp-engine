@@ -108,9 +108,10 @@ class AccountSelector:
                 self._turn[key] = (all_tier_ids.index(account.id) + 1) % len(all_tier_ids)
             elif mode == "quota_aware":
                 observations = [_current_observation(account, now) for account in eligible]
-                if all(observations) and len({
+                comparable = all(observations) and len({
                     (item.units, item.scope, item.reset_at) for item in observations
-                }) == 1:
+                }) == 1
+                if comparable:
                     account = max(zip(eligible, observations, strict=True),
                                   key=lambda pair: (pair[1].remaining, -pair[0].priority, -pair[0].id))[0]
                 else:
@@ -173,27 +174,37 @@ class AccountSelector:
                 return
             now = utcnow()
             if observation is not None:
-                account.quota_remaining = observation.remaining
-                account.quota_units = observation.units
-                account.quota_scope = observation.scope
-                account.quota_observed_at = observation.observed_at
-                account.quota_reset_at = observation.reset_at
+                members = ([account] if not account.quota_group else list(session.scalars(
+                    select(Account).where(Account.provider == account.provider,
+                                          Account.quota_group == account.quota_group)
+                )))
+                for member in members:
+                    member.quota_remaining = observation.remaining
+                    member.quota_units = observation.units
+                    member.quota_scope = observation.scope
+                    member.quota_observed_at = observation.observed_at
+                    member.quota_reset_at = observation.reset_at
             if error is None:
                 account.credential = "ok"
                 account.transient_failures = 0
                 if result is not None and result.quota_remaining is not None:
-                    account.quota_remaining = result.quota_remaining
                     if observation is None:
                         # Bare adapter counts have no scope/units/time: retain
                         # the raw value for the operator, not for ranking.
-                        account.quota_observed_at = None
-                        account.quota_units = account.quota_scope = None
-                        account.quota_reset_at = None
+                        reset_at = None
                         if result.quota_reset_at:
                             reset_at = datetime.fromisoformat(result.quota_reset_at.replace("Z", "+00:00"))
                             if reset_at.tzinfo is None:
                                 raise ValueError("Provider quota reset must be timezone-aware")
-                            account.quota_reset_at = reset_at
+                        members = ([account] if not account.quota_group else list(session.scalars(
+                            select(Account).where(Account.provider == account.provider,
+                                                  Account.quota_group == account.quota_group)
+                        )))
+                        for member in members:
+                            member.quota_remaining = result.quota_remaining
+                            member.quota_observed_at = None
+                            member.quota_units = member.quota_scope = None
+                            member.quota_reset_at = reset_at
                     if result.quota_remaining <= 0:
                         until = account.quota_reset_at or now + timedelta(seconds=300)
                         reason = "exhausted" if account.quota_reset_at else "quota_retry_estimate"
@@ -222,9 +233,14 @@ class AccountSelector:
                     until = now + timedelta(seconds=60 if error.kind == ErrorKind.RATE_LIMITED else 300)
                     reason = f"retry_estimate:{error.kind.value}"
                 if error.kind == ErrorKind.EXHAUSTED and observation is None:
-                    account.quota_remaining = 0
-                    account.quota_reset_at = known_reset
-                    account.quota_units = account.quota_scope = account.quota_observed_at = None
+                    members = ([account] if not account.quota_group else list(session.scalars(
+                        select(Account).where(Account.provider == account.provider,
+                                              Account.quota_group == account.quota_group)
+                    )))
+                    for member in members:
+                        member.quota_remaining = 0
+                        member.quota_reset_at = known_reset
+                        member.quota_units = member.quota_scope = member.quota_observed_at = None
                 self._cool_group(session, account, until, reason)
             elif error.kind == ErrorKind.TRANSIENT:
                 account.transient_failures += 1
