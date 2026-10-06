@@ -21,6 +21,7 @@ class _Bucket:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     concurrency: asyncio.Semaphore | None = None
     concurrency_limit: int | None = None
+    active: int = 0
     next_at: float = 0
     rate_limit_rps: float | None = None
 
@@ -65,19 +66,17 @@ class RequestLimiter:
         rate, limit = self._validate(rate_limit_rps, concurrency)
         key = (provider, f"group:{quota_group}" if quota_group else f"account:{account_id}")
         bucket = self._buckets.setdefault(key, _Bucket())
-        # Account and group modes cannot silently change concurrency with
-        # requests in flight. Mode/config edits require a new limiter.
-        if bucket.concurrency_limit != limit:
-            async with bucket.lock:
-                if bucket.concurrency_limit != limit:
-                    if bucket.concurrency is not None:
-                        raise ValueError("concurrency changed while limiter active")
-                    if limit is not None:
-                        bucket.concurrency = asyncio.Semaphore(limit)
-                        bucket.concurrency_limit = limit
-        semaphore = bucket.concurrency
+        async with bucket.lock:
+            if bucket.concurrency_limit != limit and bucket.active == 0:
+                bucket.concurrency = asyncio.Semaphore(limit) if limit is not None else None
+                bucket.concurrency_limit = limit
+            # Do not replace an occupied semaphore; an operator edit takes
+            # effect once its last admitted operation finishes.
+            semaphore = bucket.concurrency
         if semaphore is not None:
             await self._within_deadline(semaphore.acquire(), deadline)
+        async with bucket.lock:
+            bucket.active += 1
         try:
             async with bucket.lock:
                 now = self._clock()
@@ -91,13 +90,17 @@ class RequestLimiter:
                 # The spacing is per *outgoing* operation; subrequests reserve
                 # separate starts. Never relax a shared provider limit when
                 # two accounts in one quota group carry different overrides.
-                bucket.rate_limit_rps = max(bucket.rate_limit_rps or 0, rate)
+                if rate > 0:
+                    bucket.rate_limit_rps = (min(bucket.rate_limit_rps, rate)
+                                             if bucket.rate_limit_rps else rate)
                 bucket.next_at = (self._clock() + 1 / bucket.rate_limit_rps
                                   if bucket.rate_limit_rps else self._clock())
             yield
         finally:
-            if semaphore is not None:
-                semaphore.release()
+            async with bucket.lock:
+                bucket.active -= 1
+                if semaphore is not None:
+                    semaphore.release()
 
     async def _within_deadline(self, work: Any, deadline: float | None) -> Any:
         if deadline is None:

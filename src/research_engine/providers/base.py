@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -84,21 +85,36 @@ class CallContext:
         return max(0.0, self.deadline - time.monotonic())
 
     async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        from research_engine.providers.http import request
+
+        guarded = url in self._targets
+        retries = kwargs.pop("retries", None)
+        if retries is None:
+            retries = 1 if method.upper() in {"GET", "HEAD", "OPTIONS"} and not guarded else 0
+
         async def send() -> httpx.Response:
-            if url in self._targets:
+            if guarded:
                 from research_engine.providers.url_guard import safe_fetch
                 return await safe_fetch(self.client, url, deadline=self.deadline, method=method, **kwargs)
-            from research_engine.providers.http import request
-            return await request(self.client, method, url, deadline=self.deadline, **kwargs)
+            return await request(self.client, method, url, deadline=self.deadline, retries=0, **kwargs)
 
-        if self.limiter is None:
-            return await send()
-        async with self.limiter.admit(
-            self.provider, self.account_id, quota_group=self.quota_group,
-            rate_limit_rps=self.options.get("rate_limit_rps"),
-            concurrency=self.options.get("concurrency"), deadline=self.deadline,
-        ):
-            return await send()
+        for attempt in range(retries + 1):
+            try:
+                if self.limiter is None:
+                    return await send()
+                async with self.limiter.admit(
+                    self.provider, self.account_id, quota_group=self.quota_group,
+                    rate_limit_rps=self.options.get("rate_limit_rps"),
+                    concurrency=self.options.get("concurrency"), deadline=self.deadline,
+                ):
+                    response = await send()
+                if response.status_code not in {408, 500, 502, 503, 504} or attempt == retries:
+                    return response
+            except ProviderError as error:
+                if attempt == retries or error.kind != ErrorKind.TRANSIENT:
+                    raise
+            await asyncio.sleep(min(0.25 * 2 ** attempt, self.remaining()))
+        raise ProviderError(ErrorKind.TRANSIENT, "Provider request failed")
 
     async def validate_url(self, target: str) -> Any:
         from research_engine.providers.url_guard import validate_url

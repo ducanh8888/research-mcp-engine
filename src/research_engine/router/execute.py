@@ -118,7 +118,12 @@ class Engine:
         provider = self.providers[name]
         connection = getattr(provider, "bridge_connection", None)
         if connection:
-            connection_id, connection_options = await asyncio.to_thread(self._connection_account, connection)
+            try:
+                connection_id, connection_options = await asyncio.to_thread(self._connection_account, connection)
+            except ProviderError as error:
+                from research_engine.providers.omniroute.bridge import BridgeError
+                raise BridgeError(error.kind, "OmniRoute connection has no usable account",
+                                  scope="connection") from error
             credentials, options = await asyncio.gather(
                 asyncio.to_thread(self.secrets.get, connection_id),
                 asyncio.to_thread(self._provider_options, name),

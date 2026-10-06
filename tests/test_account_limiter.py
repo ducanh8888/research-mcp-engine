@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 
+import httpx
 import pytest
 
+from research_engine.providers.base import CallContext
 from research_engine.router.limiter import RequestLimiter
 
 
@@ -78,6 +81,42 @@ async def test_deadline_during_rate_wait_does_not_reserve_later_slot():
     assert clock.delays == []
     async with limiter.admit("arxiv", 1, rate_limit_rps=1, deadline=5):
         assert clock.now == 2
+
+
+async def test_each_http_retry_acquires_new_rate_slot():
+    clock = FakeClock(now=time.monotonic())
+    limiter = RequestLimiter(clock=clock.time, sleep=clock.sleep)
+    calls = []
+
+    def respond(request):
+        calls.append(clock.now)
+        return httpx.Response(503 if len(calls) == 1 else 200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        ctx = CallContext(client, {}, 1, "arxiv", clock.now + 10, {"rate_limit_rps": 1}, limiter=limiter)
+        response = await ctx.request("GET", "https://export.arxiv.org/api/query")
+    assert response.status_code == 200
+    assert calls == [clock.now - 1, clock.now]
+
+
+async def test_operator_concurrency_edit_applies_after_inflight_call():
+    limiter = RequestLimiter()
+    async with limiter.admit("scholar", 1, concurrency=2):
+        pass
+    async with limiter.admit("scholar", 1, concurrency=1):
+        assert limiter._buckets[("scholar", "account:1")].concurrency_limit == 1
+    async with limiter.admit("scholar", 1, concurrency=None):
+        assert limiter._buckets[("scholar", "account:1")].concurrency_limit is None
+
+
+async def test_group_rate_never_relaxes_when_second_account_has_higher_rps():
+    clock = FakeClock()
+    limiter = RequestLimiter(clock=clock.time, sleep=clock.sleep)
+    starts = []
+    for account, rate in ((1, 1), (2, 10), (1, 10)):
+        async with limiter.admit("scholar", account, quota_group="shared", rate_limit_rps=rate):
+            starts.append(clock.now)
+    assert starts == [1, 2, 3]
 
 
 async def test_limit_options_reject_invalid_values_without_calling_provider():
