@@ -23,9 +23,11 @@ def build_registry() -> dict[str, Provider]:
 
 
 ORDER = {
-    "web_search": ["omni:duckduckgo-free", "omni:exa-search", "omni:brave-search", "omni:serper-search"],
-    "news_search": ["omni:brave-search", "omni:serper-search"],
-    "web_read": ["omni:jina-reader", "trafilatura"],
+    "web_search": ["omni:duckduckgo-free", "omni:exa-search", "omni:serper-search",
+                   "omni:ollama-search", "omni:tavily-search", "omni:firecrawl", "omni:nimble-search"],
+    "news_search": ["omni:serper-search", "omni:tavily-search", "omni:firecrawl", "omni:nimble-search"],
+    "web_read": ["omni:jina-reader", "omni:firecrawl", "omni:tavily-search",
+                 "omni:nimble-search", "trafilatura"],
     "site_map": ["firecrawl"], "site_crawl": ["firecrawl"],
     "paper_search": ["openalex", "crossref", "semantic_scholar", "arxiv", "consensus_api"],
     "paper_read": ["openalex", "semantic_scholar", "arxiv", "elicit_api"],
