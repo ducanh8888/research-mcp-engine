@@ -53,21 +53,50 @@ No `provider` was omitted, no OmniRoute automatic selection was requested,
 and no commodity account was imported into Research Engine. Fetch results
 with text but no attested source/URL would not qualify as a generic read.
 
-## Final active route status and blocker
+## Final saved routes and live MCP acceptance
 
-Code now seeds only the verified useful new-install search/news/read defaults,
-with one Google-family vote and no Brave. **Existing SQLite operator routes
-are not overwritten by catalog refresh.** The current running deployment
-still has Brave in saved `web_search` and `news_search` routes, and only Jina
-Reader plus local trafilatura in saved `web_read`. An exact proposed route
-change was previewed; permission to change the shared live routes was denied.
-The final desired multi-source live MCP fanout and sequential read through
-*those final routes* therefore remain pending user approval of the route edit.
-The existing live MCP fanout is separately verified (DuckDuckGo/Exa/Serper
-succeed, Brave fails, status partial) and cannot be mislabeled as the new
-final active route test.
+The owner explicitly approved the exact saved SQLite route replacements.
+The three routes were changed in one transaction with a prior-value guard,
+without touching other routes, account secrets or provider enablement:
 
-Fixture checks after code changes: frozen pytest **403 passed**, Ruff and
-diff check passed. Re-run these after any approved final live route/capability
-change. Unknown provider accounts and Linkup reset/billing data remain unknown;
-no purchase or top-up was made.
+- `web_search` fanout: `omni:duckduckgo-free`, `omni:exa-search`,
+  `omni:serper-search`, `omni:ollama-search`, `omni:tavily-search`,
+  `omni:firecrawl`, `omni:nimble-search`.
+- `news_search` fanout: `omni:serper-search`, `omni:tavily-search`,
+  `omni:firecrawl`, `omni:nimble-search`.
+- `web_read` sequential: `omni:jina-reader`, `omni:firecrawl`,
+  `omni:tavily-search`, `omni:nimble-search`, `trafilatura`.
+
+Brave is absent from the saved active routes. Jina Search, AnySearch,
+Linkup, TinyFish, Context7 and SearchAPI remain inactive. Serper is the only
+Google-result-wrapper vote. Commodity credentials/account pools remain in
+OmniRoute; the engine retains one encrypted service connection.
+
+**Actual authenticated MCP:** one uncached web query started all seven
+configured providers; all succeeded in approximately **3.94 s** while their
+recorded provider latencies totaled approximately **20.36 s** (evidence of
+concurrent starts, not sequential fallback). Output was `complete`, eight
+ranked items, seven distinct upstream provider votes, all marked
+`transport=omniroute`. Eight merged hits had multi-source exact clusters;
+each final score matched plain `Σ 1/(60 + best_rank_per_actual_provider)`.
+No item lacked a canonical handle or contained a duplicate same-provider
+vote. A separate live news query returned `partial` when Nimble failed;
+Serper, Tavily and Firecrawl remained in `coverage.ok`, with Nimble in
+`coverage.failed`, without a direct commodity retry. This verifies truthful
+partial outcomes, not a manufactured complete cache entry.
+
+A normal `web_read` on public MCP documentation returned Jina Reader source
+text and a handle from the first sequential reader; a second source was not
+called after usable text. A `fresh=true` read returned explicit
+`NO_PROVIDER_AVAILABLE`: all four bridged readers reject upstream cache
+bypass, and local trafilatura also failed that request. Do not claim live
+fresh-source acceptance. Other reader mappings were verified through their
+explicit upstream fetch endpoints with useful public documentation text, but
+MCP fallback to a second reader was not observed live; a controlled MCP
+fixture covers sequential progression.
+
+**Final post-cutover checks:** `uv sync --frozen --extra dev`, frozen pytest
+**403 passed** (855 dependency deprecation warnings), Ruff and
+`git diff --check` passed. The rebuilt Docker/Compose service remained
+healthy and listed 17 MCP tools. Linkup's 429 reset/account facts and
+OmniRoute account inventory remain unknown; no purchase or top-up was made.

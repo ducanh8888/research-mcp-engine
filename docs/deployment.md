@@ -185,7 +185,7 @@ request is not an independent peer check; fixtures are not live entitlements.
 
 | Check | Observed result |
 |---|---|
-| Lock, lint, fixtures | `uv sync --frozen --extra dev`, `uv lock --check`, `uv run --frozen pytest -q` (391 passed after C33 concurrent-evidence fixtures, dependency deprecation warnings), `uv run --frozen ruff check src tests scripts`, `git diff --check` passed after the redaction change |
+| Lock, lint, fixtures | `uv sync --frozen --extra dev`, `uv lock --check`, `uv run --frozen pytest -q` (403 passed after the owner-approved final routes, 855 dependency deprecation warnings), `uv run --frozen ruff check src tests scripts`, `git diff --check` passed after the redaction change |
 | Container and private HTTP | `docker compose config --quiet`, `docker compose build`, `docker compose up -d`, `docker compose ps`: healthy on loopback and `100.66.213.111`. Locked runtime package versions match FastMCP 4.0.10, MCP 2.3.0, SQLAlchemy 2.1.3, HTTPX 0.28.1; image contains attribution notice |
 | MCP discovery/auth | `scripts/mcp_smoke.py --token-file data/bootstrap.json` initialized/listed 17 tools; direct HTTP absent/invalid bearer returned 401; fixture tests cover revoked token, Origin and Host rejection |
 | OmniRoute | Installed local container package 3.8.51; private service URL configured from existing `.env`. Authenticated `/v1/search` catalog lists 20 IDs, not account entitlements. After C33, one live MCP web search returned DuckDuckGo/Exa/Serper results, Brave failed and status was `partial`, with actual upstream/provider transport provenance. Jina Reader live `web_read` returned source text/handle; provider mismatch, 401/429/quota/cache semantics covered in fixtures, not live account balancing |
@@ -196,12 +196,17 @@ request is not an independent peer check; fixtures are not live entitlements.
 | Clients and network | MCP calls to the local tailnet bind succeeded; independent peer, actual Claude Code/agentRT remote client and off-tailnet denial remain unverified. A Claude Code CLI agent run without per-action approval was denied; do not retry it indirectly |
 
 The second [explicit OmniRoute operation matrix](omniroute-live-matrix-2026-10-06.md)
-records exact search/fetch provider outcomes and the still-unapproved live
-route cutover. Live specialist rechecks confirmed Crossref metadata, related
-search, typed citation verification/graph/editorial, GitHub repository search
-and Firecrawl mapping; GitHub code search was plan-blocked. The code-only
-provider mappings were checked with 403 frozen tests, Ruff and diff check;
-rerun the final full suite after any approved live route change.
+records exact provider outcomes and the approved saved route cutover. Real
+uncached MCP `web_search` gathered seven providers concurrently with exact
+provenance, eight deduped/RRF-ranked hits and no duplicate provider vote;
+`news_search` returned truthful `partial` after Nimble failed. Normal
+`web_read` selected the first usable Jina Reader source sequentially;
+`fresh=true` failed explicitly because upstream cache bypass is unavailable
+and local fallback failed. Live specialist rechecks confirmed Crossref
+metadata, related search, typed citation verification/graph/editorial,
+GitHub repository search and Firecrawl mapping; GitHub code search was
+plan-blocked. After final route changes frozen pytest passed 403 tests,
+Ruff and diff check passed. No independent remote-client inference follows.
 
 See [roadmap.md](roadmap.md) for acceptance and [cleanup.md](cleanup.md) for
 remaining closure criteria. Do not treat pending remote/client/hosted checks as PASS.

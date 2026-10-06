@@ -30,8 +30,9 @@ status assertions without rewriting the historical audit.
 Implementation commits on `research-specialists` now cover the core correctness,
 versioned migrations, specialist account selector, locked container, guarded hosted
 search adapters, explicit OmniRoute search/read bridge and ordinary-path optional
-rerank. `uv run --frozen pytest -q`: **391 passed** after the C33 public MCP
-regression matrix; Ruff and whitespace checks passed.
+rerank. After the owner-approved final saved route change,
+`uv run --frozen pytest -q`: **403 passed** (855 dependency warnings); Ruff and
+whitespace checks passed. The 391-test result below is the earlier C33 snapshot.
 The container is healthy on loopback/tailnet and real MCP calls to available
 OmniRoute, open academic, GitHub and Firecrawl operations succeeded. See the
 [deployment record](deployment.md#validation-record-2026-10-06) for the precise
@@ -39,13 +40,13 @@ observations. None of these facts alone accepts P0–P5 in full.
 
 | Phase | Implemented and checked | Exit criteria still pending |
 |---|---|---|
-| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs/absolute deadline and C33 concurrent evidence coverage (391 fixtures pass); container pass | Additional live fault injection and full admin/OAuth secret-path validation |
+| P0.1 | HTTP public-contract regressions, migration upgrade fixtures, non-idempotent start protection, redaction, bounded outputs/absolute deadline and C33 concurrent evidence coverage (403 fixtures pass after final saved route cutover); container pass | Additional live fault injection and full admin/OAuth secret-path validation |
 | P0.2 | Explicit catalog, stable credentials, account Test separation, request-bound limiter, nondestructive route-aware query keys, cache/blob maintenance | C03 concurrent OAuth edge cases; historical request/job retention approval; live admin route/Reset check |
-| P1 | One encrypted OmniRoute connection, explicit search/fetch/rerank; live DuckDuckGo/Exa search and Jina read | Brave/Serper upstream keys absent; upstream multi-account and provider quota failover not observable with API-scoped credential; fresh cache bypass unsupported |
+| P1 | One encrypted OmniRoute connection, explicit search/fetch/rerank; final saved route live web fanout collected seven sources, news preserved three peers on Nimble failure, normal Jina source read succeeded | Upstream multi-account and provider quota failover not observable with API-scoped credential; live fresh cache bypass and second-reader fallback unverified; Brave intentionally inactive |
 | P2 | Priority/round-robin/quota-aware fixtures, shared cooldown and persistent observations, admin mode | Two real specialist accounts with actual auth/rate/quota availability retries |
 | P3 | Academic/REST/GitHub semantics, conservative graph merging, live metadata/search/repo/map/crawl | Multi-seed/claim live coverage and paid Scite/Elicit/Consensus entitlements pending |
 | P4 | Guarded Scite/Elicit hosted paper search and SDK fixtures; one Firecrawl job completed across restart | Undermind authenticated schemas, eligible OAuth/tool calls, HTTPS callback, live async review/deep jobs and independent owner/cancel checks pending |
-| P5 | Locked container, auth rejection, MCP discovery/search/read/jobs on local/tailnet bind, optional rerank API check; remains default off | Independent tailnet peer, actual Claude Code/agentRT clients, off-tailnet denial, live MCP rerank toggle (setting change denied), representative rerank evaluation |
+| P5 | Locked container, auth rejection, final seven-source MCP fanout/provenance/exact dedup/RRF, sequential first-reader, discovery/jobs on local/tailnet bind and optional rerank API check; rerank remains default off | Independent tailnet peer, actual Claude Code/agentRT clients, off-tailnet denial, live MCP rerank toggle (setting change denied), representative rerank evaluation |
 
 No phase is marked fully accepted while its stated live/client criteria remain
 pending. These blockers do not prevent independently verified operations from running.
