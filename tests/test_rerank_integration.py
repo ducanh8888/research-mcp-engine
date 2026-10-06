@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 
@@ -21,6 +23,25 @@ class FusedResults(Provider):
     async def call(self, cap, req, ctx):
         return Result(hits=[Hit(provider=self.name, rank=n, title=str(n),
                                 url=f"https://example.org/{n}") for n in (1, 2)])
+
+
+@pytest.mark.asyncio
+async def test_rerank_budget_exhaustion_preserves_fused_order(tmp_path):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: pytest.fail("No rerank request"))) as client:
+        engine = Engine(make_settings(tmp_path, 8765),
+                        providers={FusedResults.name: FusedResults(), "omniroute": OmniRouteConnection()},
+                        http_client=client)
+        try:
+            with engine.db.session() as session:
+                provider = session.get(ProviderRow, "omniroute")
+                provider.options = {"rerank": {"enabled": True, "model": "jina/test-reranker"}}
+            items = [{"title": "First", "handle": "url:1"}, {"title": "Second", "handle": "url:2"}]
+            ranked, diagnostic = await engine._rerank_items("query", items, time.monotonic() + .01)
+            assert ranked == items
+            assert diagnostic["status"] == "fallback"
+            assert diagnostic["error_type"] == "TimeoutError"
+        finally:
+            await engine.stop()
 
 
 @pytest.mark.asyncio

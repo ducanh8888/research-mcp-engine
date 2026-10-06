@@ -153,13 +153,24 @@ class Engine:
                 raise ValueError("Rerank settings must be a JSON object")
             return dict(value)
 
-    async def _rerank_items(self, query: str, items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict]:
+    async def _rerank_items(self, query: str, items: list[dict[str, Any]],
+                            deadline: float | None = None) -> tuple[list[dict[str, Any]], dict]:
         from research_engine.merge.rerank import rerank
         from research_engine.providers.omniroute.bridge import OmniRouteBridge
 
         options = await asyncio.to_thread(self._rerank_options)
         diagnostics: dict[str, Any] = {}
         config = {"backend": "omniroute", **options, "diagnostics": diagnostics}
+        if deadline is not None and config.get("enabled"):
+            remaining = deadline - time.monotonic() - 0.05
+            if remaining <= 0:
+                return list(items), {"backend": str(config["backend"]), "status": "fallback",
+                                     "error_type": "TimeoutError"}
+            try:
+                config["timeout_s"] = min(float(config.get("timeout_s", 8)), remaining)
+            except (TypeError, ValueError):
+                # The reranker reports invalid settings and keeps fused order.
+                pass
         backend = str(config.get("backend", "omniroute")).lower()
         context = None
         bridge = None
@@ -249,19 +260,22 @@ class Engine:
                 continue
             began = time.monotonic()
             context = None
+            submitted = False
+            upstream_ref: str | None = None
             try:
                 async with asyncio.timeout_at(deadline):
                     context = await self.context(name, account_id, deadline - began)
                     if not await asyncio.to_thread(self.account_selector.eligible, name, cap, account_id):
                         continue
                     if start:
-                        ref = await self.providers[name].start(cap, adapter_args, context)
-                        if not isinstance(ref, str) or not ref:
+                        submitted = True
+                        upstream_ref = await self.providers[name].start(cap, adapter_args, context)
+                        if not isinstance(upstream_ref, str) or not upstream_ref:
                             raise ProviderError(ErrorKind.TRANSIENT, "Upstream returned no recoverable job reference",
                                                 ambiguous_start=True)
                         await asyncio.to_thread(self._availability, account_id, cap, None)
                         await asyncio.to_thread(self._attempt, request_id, name, account_id, "started", began)
-                        return Outcome(name, account_id=account_id, upstream_ref=ref)
+                        return Outcome(name, account_id=account_id, upstream_ref=upstream_ref)
                     result = await self.providers[name].call(cap, adapter_args, context)
                     validate_result(cap, result, name)
                     await asyncio.to_thread(self._availability, account_id, cap, None, result)
@@ -270,7 +284,9 @@ class Engine:
             except TimeoutError:
                 error = ProviderError(ErrorKind.TRANSIENT, "Deadline exceeded", ambiguous_start=start)
                 await asyncio.to_thread(self._attempt, request_id, name, account_id, "deadline", began, error)
-                if start:
+                if start and submitted:
+                    if upstream_ref:
+                        return Outcome(name, account_id=account_id, upstream_ref=upstream_ref)
                     if self.jobs is not None:
                         await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
@@ -282,7 +298,9 @@ class Engine:
                 if getattr(error, "scope", None) != "connection":
                     await asyncio.to_thread(self._availability, account_id, cap, error)
                 await asyncio.to_thread(self._attempt, request_id, name, account_id, "failed", began, error)
-                if start and error.ambiguous_start:
+                if start and error.ambiguous_start and submitted:
+                    if upstream_ref:
+                        return Outcome(name, account_id=account_id, upstream_ref=upstream_ref)
                     if self.jobs is not None:
                         await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
@@ -297,7 +315,9 @@ class Engine:
             except Exception as error:
                 classified = ProviderError(ErrorKind.TRANSIENT, f"Adapter error ({type(error).__name__})")
                 await asyncio.to_thread(self._attempt, request_id, name, account_id, "internal", began, classified)
-                if start:
+                if start and submitted:
+                    if upstream_ref:
+                        return Outcome(name, account_id=account_id, upstream_ref=upstream_ref)
                     if self.jobs is not None:
                         await self.jobs.record_unknown_start(cap, args, name, account_id, owner)
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
@@ -584,7 +604,7 @@ class Engine:
             return {**job.model_dump(), "request_id": request_id, "coverage": coverage}
         payload = await self._payload(cap, [o.result for o in succeeded], args.get("limit", 8))
         if cap in SEARCH_CAPABILITIES and len(payload.get("items", [])) > 1:
-            ranked, diagnostics = await self._rerank_items(args.get("query", ""), payload["items"])
+            ranked, diagnostics = await self._rerank_items(args.get("query", ""), payload["items"], deadline)
             payload["items"] = ranked
             if diagnostics.get("status") not in {None, "disabled"}:
                 payload["rerank"] = diagnostics
