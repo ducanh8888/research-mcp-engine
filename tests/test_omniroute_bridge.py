@@ -48,12 +48,15 @@ async def test_fixed_virtual_providers_and_connection_holder():
     assert {provider.name for provider in PROVIDERS} == {
         "omniroute", "omni:brave-search", "omni:serper-search", "omni:jina-reader",
         "omni:duckduckgo-free", "omni:exa-search", "omni:firecrawl", "omni:tavily-search",
+        "omni:ollama-search", "omni:jina-search", "omni:linkup-search",
+        "omni:anysearch-search", "omni:nimble-search",
     }
     assert not PROVIDERS[0].capabilities and not PROVIDERS[0].keyless
     assert all(provider.keyless and provider.bridge_connection == "omniroute" for provider in PROVIDERS[1:])
     assert [p.provider_id for p in PROVIDERS[1:]] == [
         "brave-search", "serper-search", "jina-reader", "duckduckgo-free", "exa-search",
-        "firecrawl", "tavily-search",
+        "firecrawl", "tavily-search", "ollama-search", "jina-search", "linkup-search",
+        "anysearch-search", "nimble-search",
     ]
 
 

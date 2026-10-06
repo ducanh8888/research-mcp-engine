@@ -29,6 +29,12 @@ PROVIDERS = [
                                                         Capability.WEB_READ}),
     OmniRouteProvider("omni:tavily-search", "tavily-search", {Capability.WEB_SEARCH, Capability.NEWS_SEARCH,
                                                                  Capability.WEB_READ}),
+    OmniRouteProvider("omni:ollama-search", "ollama-search", {Capability.WEB_SEARCH}),
+    OmniRouteProvider("omni:jina-search", "jina-search", {Capability.WEB_SEARCH}),
+    OmniRouteProvider("omni:linkup-search", "linkup-search", {Capability.WEB_SEARCH}),
+    OmniRouteProvider("omni:anysearch-search", "anysearch-search", {Capability.WEB_SEARCH, Capability.WEB_READ}),
+    OmniRouteProvider("omni:nimble-search", "nimble-search", {Capability.WEB_SEARCH, Capability.NEWS_SEARCH,
+                                                               Capability.WEB_READ}),
 ]
 
 __all__ = ["OmniRouteBridge", "OmniRouteConnection", "OmniRouteProvider", "PROVIDERS"]
