@@ -18,7 +18,7 @@ from sqlalchemy import select
 from research_engine.cache import Cache
 from research_engine.config import Settings
 from research_engine.merge import merge_hits
-from research_engine.merge.canonical import canonical_handle, normalize_url
+from research_engine.merge.canonical import STRONG_IDS, canonical_handle, normalize_url
 from research_engine.providers.base import (
     ASYNC_CAPABILITIES, SEARCH_CAPABILITIES, CallContext, Capability, ErrorKind,
     Provider, ProviderError, Result,
@@ -182,8 +182,15 @@ class Engine:
             providers = []
             for name in route.providers:
                 row = session.get(ProviderRow, name)
-                providers.append((name, bool(row and row.enabled), row.options if row else None))
-            data = json.dumps([route.mode, providers], sort_keys=True, default=str)
+                accounts = list(session.scalars(select(Account).where(Account.provider == name)))
+                providers.append((name, bool(row and row.enabled), row.options if row else None,
+                                  [(a.id, a.enabled, a.credential, a.cooldown_until,
+                                    a.blocked_capabilities, a.quota_remaining, a.quota_reset_at)
+                                   for a in accounts]))
+            rerank = session.get(ProviderRow, "omniroute")
+            data = json.dumps([route.mode, providers,
+                               (rerank.options or {}).get("rerank") if rerank else None],
+                              sort_keys=True, default=str)
             return hashlib.sha256(data.encode()).hexdigest()
 
     def _route(self, cap: Capability) -> tuple[str, list[str]]:
@@ -333,6 +340,13 @@ class Engine:
                     session.add(row)
                     session.flush()
                 else:
+                    conflicts = [name for name in STRONG_IDS if row.canonical_ids.get(name)
+                                 and identity["ids"].get(name)
+                                 and row.canonical_ids[name] != identity["ids"][name]]
+                    if conflicts:
+                        # A shared DOI/URL cannot make contradictory arXiv/PMID
+                        # assertions one persisted identity across requests.
+                        raise ToolError("INTERNAL", "Search evidence conflicts with a stored strong identity")
                     row.canonical_ids = {**row.canonical_ids, **identity["ids"]}
                     row.url = row.url or identity.get("url")
                 for alias in identity.get("aliases", []):
@@ -493,6 +507,7 @@ class Engine:
         read = cap in {Capability.WEB_READ, Capability.PAPER_READ}
         original_target = args.get("target")
         handle = None
+        cache_identity = await asyncio.to_thread(self._route_identity, cap) if not read and cap not in ASYNC_CAPABILITIES else None
         if read:
             args["target"], handle = await asyncio.to_thread(self._resolve_target, original_target)
             if not args.get("fresh"):
@@ -502,7 +517,7 @@ class Engine:
                             "coverage": {"ok": [cached["source"]], "failed": [], "skipped": []},
                             "document": self._page(cached, args.get("cursor"))}
         elif cap not in ASYNC_CAPABILITIES and not args.get("fresh"):
-            cache_args = {**args, "_route_identity": await asyncio.to_thread(self._route_identity, cap)}
+            cache_args = {**args, "_route_identity": cache_identity}
             cached = await asyncio.to_thread(self.cache.get_query, cap.value, cache_args)
             if cached:
                 return {**cached, "request_id": request_id}
@@ -608,9 +623,12 @@ class Engine:
             if normalize_url(args["target"]) != handle:
                 await asyncio.to_thread(self.cache.put_document, cap.value, args["target"], document)
             envelope["document"] = self._page(document, args.get("cursor"))
-        elif not read and envelope["status"] == "complete":
-            cache_args = {**args, "_route_identity": await asyncio.to_thread(self._route_identity, cap)}
-            await asyncio.to_thread(self.cache.put_query, cap.value, cache_args, envelope)
+        elif cache_identity is not None and envelope["status"] == "complete":
+            # A route/account/rerank edit while providers are running must not
+            # store old evidence under the new cohort's cache identity.
+            if cache_identity == await asyncio.to_thread(self._route_identity, cap):
+                cache_args = {**args, "_route_identity": cache_identity}
+                await asyncio.to_thread(self.cache.put_query, cap.value, cache_args, envelope)
         return envelope
 
     async def replay(self, request_id: str) -> dict:

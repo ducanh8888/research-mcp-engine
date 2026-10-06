@@ -82,6 +82,62 @@ async def test_changed_route_identity_bypasses_stale_query_without_deleting_hist
         await engine.stop()
 
 
+async def test_inflight_route_edit_does_not_cache_old_results_under_new_route(tmp_path):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class SlowSource(Stub):
+        async def call(self, cap, req, ctx):
+            entered.set()
+            await release.wait()
+            return await super().call(cap, req, ctx)
+
+    old = SlowSource("old", {Capability.WEB_SEARCH}, Result(hits=[Hit(
+        provider="old", title="Old", url="https://example.org/old")]))
+    new = Stub("new", {Capability.WEB_SEARCH}, Result(hits=[Hit(
+        provider="new", title="New", url="https://example.org/new")]))
+    engine = engine_with(tmp_path, [old, new], Capability.WEB_SEARCH)
+    try:
+        with engine.db.session() as session:
+            session.get(Routing, "web_search").providers = [old.name]
+        task = asyncio.create_task(engine.execute("web_search", {"query": "same"}))
+        await asyncio.wait_for(entered.wait(), 2)
+        with engine.db.session() as session:
+            session.get(Routing, "web_search").providers = [new.name]
+        release.set()
+        first = await task
+        assert first["items"][0]["title"] == "Old"
+        second = await engine.execute("web_search", {"query": "same"})
+        assert second["items"][0]["title"] == "New"
+        assert len(old.calls) == len(new.calls) == 1
+    finally:
+        release.set()
+        await engine.stop()
+
+
+async def test_account_availability_and_rerank_edits_bypass_complete_cache(tmp_path):
+    provider = Stub("cached", {Capability.WEB_SEARCH}, Result(hits=[Hit(
+        provider="cached", title="First", url="https://example.org/first")]))
+    engine = engine_with(tmp_path, [provider], Capability.WEB_SEARCH)
+    try:
+        await engine.execute("web_search", {"query": "same"})
+        with engine.db.session() as session:
+            for account in session.scalars(select(Account).where(Account.provider == "cached")):
+                account.enabled = False
+        with pytest.raises(ToolError):
+            await engine.execute("web_search", {"query": "same"})
+        with engine.db.session() as session:
+            for account in session.scalars(select(Account).where(Account.provider == "cached")):
+                account.enabled = True
+            session.add(ProviderRow(name="omniroute", options={"rerank": {"enabled": False}}))
+        provider.result = Result(hits=[Hit(provider="cached", title="Second",
+                                           url="https://example.org/second")])
+        updated = await engine.execute("web_search", {"query": "same"})
+        assert updated["items"][0]["title"] == "Second"
+    finally:
+        await engine.stop()
+
+
 def test_direct_reader_receives_public_url_and_claim_keeps_independent_sources():
     source = {"target": "https://example.org/source", "fresh": True}
     assert for_provider(Capability.WEB_READ, source, "trafilatura")["url"] == source["target"]
@@ -112,6 +168,28 @@ async def test_misattributed_search_hit_does_not_create_uninvoked_rrf_vote(tmp_p
             await engine.execute("web_search", {"query": "fixture", "fresh": True})
         assert failure.value.code == "NO_PROVIDER_AVAILABLE"
         assert failure.value.coverage["failed"][0]["p"] == "called"
+    finally:
+        await engine.stop()
+
+
+async def test_cross_request_strong_id_conflict_does_not_rewrite_stored_aliases(tmp_path):
+    first = Stub("identity", {Capability.PAPER_SEARCH}, Result(hits=[Hit(
+        provider="identity", title="Paper A", url="https://doi.org/10.1234/paper",
+        ids={"doi": "10.1234/paper", "arxiv": "2301.12345"})]))
+    engine = engine_with(tmp_path, [first], Capability.PAPER_SEARCH)
+    try:
+        initial = await engine.execute("paper_search", {"query": "paper a", "fresh": True})
+        handle = initial["items"][0]["handle"]
+        first.result = Result(hits=[Hit(provider="identity", title="Paper B",
+                                        url="https://doi.org/10.1234/paper",
+                                        ids={"doi": "10.1234/paper", "arxiv": "2301.54321"})])
+        with pytest.raises(ToolError) as failure:
+            await engine.execute("paper_search", {"query": "paper b", "fresh": True})
+        assert failure.value.code == "INTERNAL"
+        from research_engine.storage.db import Handle, HandleAlias
+        with engine.db.session() as session:
+            assert session.get(Handle, handle).canonical_ids["arxiv"] == "2301.12345"
+            assert session.get(HandleAlias, "arxiv:2301.54321") is None
     finally:
         await engine.stop()
 
