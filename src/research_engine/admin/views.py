@@ -24,6 +24,7 @@ from wtforms.validators import Optional
 
 from research_engine.admin.oauth_connect import OAuthConnect
 from research_engine.config import Settings
+from research_engine.jobs.runner import _public_error
 from research_engine.router.accounts import SELECTION_MODES, selection_mode
 from research_engine.router.routes import validate_route
 from research_engine.storage.db import (
@@ -303,6 +304,7 @@ def mount_admin(
         name_plural = "Jobs"
         column_list = [Job.id, Job.capability, Job.provider, Job.account_id, Job.status, Job.updated_at]
         column_details_list = column_list + [Job.args, Job.last_error, Job.result, Job.cancelled_upstream]
+        column_formatters_detail = {Job.last_error: lambda model, _: _public_error(model.last_error)}
 
     class OperationsView(BaseView):
         name = "Operations"

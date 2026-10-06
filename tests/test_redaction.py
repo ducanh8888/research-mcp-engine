@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from research_engine.admin.views import _public_error
 from research_engine.providers.base import Capability, ErrorKind, Provider, ProviderError
 from research_engine.router.execute import Engine, ToolError
 from research_engine.router.redact import safe_error
@@ -30,6 +31,8 @@ def test_nested_secret_and_url_are_not_reflected():
     unknown = safe_error(ProviderError(ErrorKind.TRANSIENT,
                                         "contact provider with unknown-private-string"))
     assert "unknown-private-string" not in unknown
+    legacy_job_message = _public_error("https://example.org/?token=old-secret")
+    assert "old-secret" not in legacy_job_message
 
 
 @pytest.mark.asyncio
