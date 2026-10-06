@@ -15,7 +15,7 @@ from research_engine.providers.base import Capability, ErrorKind, Provider, Prov
 from research_engine.providers.scholar.semantic_scholar import SemanticScholarProvider
 from research_engine.providers.web.firecrawl import FirecrawlProvider
 from research_engine.router.execute import Engine, ToolError
-from research_engine.router.requests import validate
+from research_engine.router.requests import for_provider, validate
 from research_engine.server.app import create_app
 from research_engine.server.schemas import Document, Hit, Result
 from research_engine.storage.db import Account, Attempt, Database, ProviderRow, RequestRow, Routing, create_client_token
@@ -82,6 +82,40 @@ async def test_changed_route_identity_bypasses_stale_query_without_deleting_hist
         await engine.stop()
 
 
+def test_direct_reader_receives_public_url_and_claim_keeps_independent_sources():
+    source = {"target": "https://example.org/source", "fresh": True}
+    assert for_provider(Capability.WEB_READ, source, "trafilatura")["url"] == source["target"]
+    assert for_provider(Capability.WEB_READ, source, "omni:jina-reader")["target"] == source["target"]
+    for name in ("crossref", "openalex", "scite_rest"):
+        request = for_provider(Capability.CITATION_VERIFY, {"citation": "10.1234/a", "claim": "statement"}, name)
+        assert request["citation"] == "10.1234/a"
+        assert "statement" not in request
+    assert for_provider(Capability.CITATION_VERIFY,
+                        {"citation": "10.1234/a", "claim": "statement"},
+                        "semantic_scholar")["statement"] == "statement"
+
+
+def test_year_filters_reach_supported_specialist_adapters_without_double_translation():
+    args = {"query": "evidence", "year_from": 2020, "year_to": 2024}
+    for name in ("consensus_api", "scite_mcp", "elicit_mcp"):
+        request = for_provider(Capability.PAPER_SEARCH, args, name)
+        assert request["year_from"] == 2020 and request["year_to"] == 2024
+        assert "filters" not in request
+
+
+async def test_misattributed_search_hit_does_not_create_uninvoked_rrf_vote(tmp_path):
+    fake = Stub("called", {Capability.WEB_SEARCH}, Result(hits=[Hit(
+        provider="uncalled", title="False provenance", url="https://example.org/false")]))
+    engine = engine_with(tmp_path, [fake], Capability.WEB_SEARCH)
+    try:
+        with pytest.raises(ToolError) as failure:
+            await engine.execute("web_search", {"query": "fixture", "fresh": True})
+        assert failure.value.code == "NO_PROVIDER_AVAILABLE"
+        assert failure.value.coverage["failed"][0]["p"] == "called"
+    finally:
+        await engine.stop()
+
+
 async def test_empty_read_fallback_and_valid_empty_search(tmp_path):
     first = Stub("empty_read", {Capability.WEB_READ}, Result())
     second = Stub("good_read", {Capability.WEB_READ}, Result(document=Document(
@@ -118,6 +152,26 @@ async def test_account_independent_failure_not_retried(tmp_path, kind):
         with engine.db.session() as session:
             attempts = list(session.scalars(select(Attempt)))
             assert len(attempts) == 1 and attempts[0].kind == kind
+    finally:
+        await engine.stop()
+
+
+async def test_citation_only_metadata_advances_past_unresolved_source(tmp_path):
+    citation = "Author. Exact Article Title. (2021). Journal."
+    unresolved = Stub("unresolved", {Capability.PAPER_METADATA}, Result(
+        per_id_coverage={citation: {"found": False, "reason": "unsupported_citation_text"}}))
+    resolved = Stub("resolved", {Capability.PAPER_METADATA}, Result(
+        records=[{"requested_id": citation, "id": "doi:10.1234/article", "provider": "resolved"}],
+        per_id_coverage={citation: {"found": True, "provider": "resolved"}}))
+    engine = engine_with(tmp_path, [unresolved, resolved], Capability.PAPER_METADATA)
+    try:
+        data = await engine.execute("paper_metadata", {"citation": citation, "fresh": True})
+        assert data["coverage"]["ok"] == ["unresolved", "resolved"]
+        assert data["per_id_coverage"][citation]["status"] == "found"
+        assert data["records"][0]["requested_id"] == citation
+        assert data["not_found"] == []
+        assert len(unresolved.calls) == len(resolved.calls) == 1
+        assert "ids" not in unresolved.calls[0][1]
     finally:
         await engine.stop()
 

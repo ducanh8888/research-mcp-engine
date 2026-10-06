@@ -6,7 +6,7 @@ from research_engine.providers.base import SEARCH_CAPABILITIES, Capability, Erro
 from research_engine.server.schemas import Hit
 
 
-def validate_result(cap: Capability, result: Result) -> None:
+def validate_result(cap: Capability, result: Result, routed_provider: str | None = None) -> None:
     if not isinstance(result, Result):
         raise ProviderError(ErrorKind.TRANSIENT, "Adapter returned an invalid result type")
     if cap in SEARCH_CAPABILITIES:
@@ -14,6 +14,12 @@ def validate_result(cap: Capability, result: Result) -> None:
         for hit in result.hits:
             if not isinstance(hit, Hit) or not hit.provider or not (hit.url or hit.ids or hit.id):
                 raise ProviderError(ErrorKind.TRANSIENT, "Adapter returned a search hit without an identity")
+            if routed_provider is not None:
+                accepted = {routed_provider}
+                if routed_provider.startswith("omni:"):
+                    accepted.add(routed_provider.removeprefix("omni:"))
+                if hit.provider not in accepted:
+                    raise ProviderError(ErrorKind.TRANSIENT, "Adapter attributed evidence to a different provider")
     elif cap in {Capability.WEB_READ, Capability.PAPER_READ}:
         document = result.document
         if document is None or not document.text.strip() or not document.url or not document.source:

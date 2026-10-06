@@ -251,7 +251,7 @@ class Engine:
                         await asyncio.to_thread(self._attempt, request_id, name, account_id, "started", began)
                         return Outcome(name, account_id=account_id, upstream_ref=ref)
                     result = await self.providers[name].call(cap, adapter_args, context)
-                    validate_result(cap, result)
+                    validate_result(cap, result, name)
                     await asyncio.to_thread(self._availability, account_id, cap, None, result)
                     await asyncio.to_thread(self._attempt, request_id, name, account_id, "ok", began)
                     return Outcome(name, result=result, account_id=account_id)
@@ -509,8 +509,8 @@ class Engine:
         outcomes: list[Outcome] = []
         metadata = None
         metadata_attempts: list[tuple[Outcome, list[str]]] = []
-        if cap == Capability.PAPER_METADATA and args.get("ids"):
-            pending = list(args["ids"])
+        if cap == Capability.PAPER_METADATA:
+            pending = list(args.get("ids") or [args["citation"]])
             records: list[dict] = []
             per_id: dict[str, Any] = {}
             for name in names:
@@ -521,7 +521,9 @@ class Engine:
                     metadata_attempts.append((outcomes[-1], pending[:]))
                     break
                 attempted = pending[:]
-                outcome = await self._call(cap, {**provider_args, "ids": attempted}, name, request_id, provider_deadline)
+                request = ({**provider_args, "ids": attempted} if args.get("ids") else
+                           {**provider_args, "citation": attempted[0]})
+                outcome = await self._call(cap, request, name, request_id, provider_deadline)
                 outcomes.append(outcome)
                 metadata_attempts.append((outcome, attempted))
                 if outcome.result is not None:
@@ -572,7 +574,7 @@ class Engine:
             # invalidate a completed miss for a different ID.
             not_found = []
             per_id_coverage = {}
-            for key in args["ids"]:
+            for key in (args.get("ids") or [args["citation"]]):
                 assertions = evidence.get(key, [])
                 found = any(row.get("found") is True for row in assertions if isinstance(row, dict))
                 completed_miss = bool(assertions) and all(isinstance(row, dict) and row.get("found") is False
@@ -641,7 +643,7 @@ class Engine:
         try:
             context = await self.context(name, account_id)
             result = await provider.call(cap, args, context)
-            validate_result(cap, result)
+            validate_result(cap, result, name)
             await asyncio.to_thread(self._availability, account_id, cap, None, result)
             payload = {"status": "complete", "provider": name, "account_id": account_id}
         except ProviderError as error:

@@ -17,7 +17,9 @@ YEAR_FILTERS = {
     "openalex": ("from_publication_date", "to_publication_date"),
     "crossref": ("from-pub-date", "until-pub-date"),
     "semantic_scholar": ("year", "year"),
-    "consensus": ("year_min", "year_max"),
+    "consensus_api": ("year_min", "year_max"),
+    "elicit_mcp": ("minYear", "maxYear"),
+    "scite_mcp": ("date_from", "date_to"),
 }
 
 
@@ -120,6 +122,8 @@ def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, 
     request = {k: v for k, v in args.items() if v is not None and k not in {"cursor", "deadline_s"}}
     if not name.startswith("omni:"):
         request.pop("fresh", None)
+    if cap in {Capability.WEB_READ, Capability.PAPER_READ} and not name.startswith("omni:"):
+        request["url"] = request.get("target")
     if cap == Capability.SITE_CRAWL:
         request["depth"] = request.pop("max_depth", 2)
     if cap in {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}:
@@ -147,9 +151,7 @@ def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, 
         raise InvalidRequest("Provider does not support this repository search mode")
     if cap == Capability.CITATION_VERIFY:
         claim = request.pop("claim", None)
-        if claim:
-            if name != "semantic_scholar":
-                raise InvalidRequest("Provider does not support claim passages")
+        if claim and name == "semantic_scholar":
             request["statement"] = claim
     if cap == Capability.PAPER_SEARCH:
         start, end = request.pop("year_from", None), request.pop("year_to", None)
@@ -165,5 +167,6 @@ def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, 
                 request["filters"] = {**({first: f"{start:04d}-01-01"} if start else {}),
                                       **({last: f"{end:04d}-12-31"} if end else {})}
             else:
-                request["filters"] = {**({first: start} if start else {}), **({last: end} if end else {})}
+                request.update({**({"year_from": start} if start else {}),
+                                **({"year_to": end} if end else {})})
     return request
