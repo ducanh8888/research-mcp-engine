@@ -259,7 +259,7 @@ encrypted token storage and restart polling are required behavior and remain.
 
 ## Current branch evidence-coverage correction
 
-- [ ] **C33 — Enforce concurrent evidence coverage and truthful partial status.**
+- [x] **C33 — Enforce concurrent evidence coverage and truthful partial status.**
   Static review at `27d28ee0747f98634756d076ae3c1d1c9df8255c` found that
   `router/execute.py:Engine._route` accepts sequential search configuration;
   `_execute` then stops on first success and labels ordinary fanout with failed peers
@@ -289,6 +289,17 @@ encrypted token storage and restart polling are required behavior and remain.
   classifiers or control-plane machinery. Close with the focused public-contract
   [regression matrix](roadmap.md#evidence-coverage-correction); record two independent
   live sources separately where configured, leaving unavailable live checks pending.
+
+C33 correction verified 2026-10-06: 38 focused real HTTP MCP fixtures cover all six
+mandatory search fanouts, simultaneous start, independent-provider identity,
+failed/skipped/timeout partial coverage, no reduced-coverage caching, gateway
+failure without direct fallback, account retry scope, sequential exceptions,
+typed assertions/site maps and default-off/validated rerank. Full frozen suite:
+391 passed. A live MCP web search collected DuckDuckGo, Exa and Serper results
+with Brave failed and `status=partial`; a fresh academic search collected four
+successful sources while an unconfigured peer was skipped with partial status.
+This verifies the C33 correction for the available sources, not upstream account
+pool failover or paid-provider eligibility.
 
 ## Retire after verified bridge cutover
 
@@ -326,8 +337,8 @@ worked live and its ordinary path passed fixtures, but Brave/Serper upstream
 accounts are unconfigured; no upstream account-pool failover or filter parity
 was verified. Preserve retained direct code/credential data pending each operation's
 cutover evidence, while removing covered direct operations from active fallback/duplicate
-routes under C33. C33's concurrent coverage, partial/cache and account retry corrections
-remain open; existing closure counts do not validate them. C27 has synthetic
+routes under C33. The 38 focused public MCP fixtures and live independent-source
+search recorded above now verify C33 for configured operations. C27 has synthetic
 call/Test and job poll/cancel redaction fixtures; complete log/admin/OAuth
 failure injection is pending. C30 prunes cache/orphan blobs safely but only
 reports aged request/job rows: historical row deletion was denied pending
