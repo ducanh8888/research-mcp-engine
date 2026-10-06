@@ -195,5 +195,13 @@ request is not an independent peer check; fixtures are not live entitlements.
 | Hosted OAuth/MCP | Scite/Elicit normalized search fixtures and locked SDK OAuth/concurrency fixtures pass; eligible authenticated tool schemas/calls, HTTPS callback/CIMD and Undermind remain pending |
 | Clients and network | MCP calls to the local tailnet bind succeeded; independent peer, actual Claude Code/agentRT remote client and off-tailnet denial remain unverified. A Claude Code CLI agent run without per-action approval was denied; do not retry it indirectly |
 
+The second [explicit OmniRoute operation matrix](omniroute-live-matrix-2026-10-06.md)
+records exact search/fetch provider outcomes and the still-unapproved live
+route cutover. Live specialist rechecks confirmed Crossref metadata, related
+search, typed citation verification/graph/editorial, GitHub repository search
+and Firecrawl mapping; GitHub code search was plan-blocked. The code-only
+provider mappings were checked with 403 frozen tests, Ruff and diff check;
+rerun the final full suite after any approved live route change.
+
 See [roadmap.md](roadmap.md) for acceptance and [cleanup.md](cleanup.md) for
 remaining closure criteria. Do not treat pending remote/client/hosted checks as PASS.
