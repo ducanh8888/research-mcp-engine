@@ -213,8 +213,8 @@ async def test_http_failover_partial_coverage_and_handle_after_restart(tmp_path:
     with run_http_app(app, sock):
         async with runtime.client() as client:
             search = json.loads((await client.call_tool("web_search", {"query": "fixture", "limit": 5})).content[0].text)
-            # v3: an attempted 429 is a completed failure; only missed deadlines make results partial.
-            assert search["status"] == "complete"
+            # A rate-limited peer reduces evidence coverage even when another provider succeeds.
+            assert search["status"] == "partial"
             assert len(search["items"]) == 1
             assert SyntheticSearch.name in search["coverage"]["ok"]
             assert any(row["p"] == RateLimitedSearch.name for row in search["coverage"]["failed"])

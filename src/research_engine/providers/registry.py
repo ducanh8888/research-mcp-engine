@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from research_engine.providers.base import ASYNC_CAPABILITIES, Capability, Provider
+from research_engine.providers.base import Capability, Provider
+from research_engine.router.routes import required_mode
 
 
 def build_registry() -> dict[str, Provider]:
@@ -35,9 +36,8 @@ ORDER = {
     "editorial_check": ["crossref", "openalex", "semantic_scholar", "scite_rest"],
     "deep_literature_search": ["undermind", "elicit_mcp"],
     "systematic_review": ["elicit_api", "elicit_mcp"],
-    "developer_search": ["firecrawl", "exa", "github"], "repo_search": ["github"],
+    "developer_search": ["github"], "repo_search": ["github"],
 }
-SEQUENTIAL = {Capability.WEB_READ, Capability.PAPER_READ, Capability.PAPER_METADATA, *ASYNC_CAPABILITIES}
 
 
 def default_routes(registry: dict[str, Provider]) -> dict[str, dict]:
@@ -46,5 +46,5 @@ def default_routes(registry: dict[str, Provider]) -> dict[str, dict]:
         compatible = [name for name, provider in registry.items() if cap in provider.capabilities]
         ordered = [name for name in ORDER.get(cap.value, []) if name in compatible]
         if ordered:
-            routes[cap.value] = {"mode": "sequential" if cap in SEQUENTIAL else "fanout", "providers": ordered}
+            routes[cap.value] = {"mode": required_mode(cap), "providers": ordered}
     return routes

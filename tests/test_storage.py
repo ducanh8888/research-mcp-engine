@@ -68,7 +68,7 @@ def test_old_database_upgrade_preserves_data_and_matches_fresh_schema(tmp_path):
     old.close()
 
     upgraded = Database(path)
-    upgraded.initialize({"fixture": ShippedProvider(["web_search"], options={"new": 2})})
+    upgraded.initialize({"fixture": ShippedProvider(["web_search", "paper_read"], options={"new": 2})})
     with upgraded.session() as session:
         rows = list(session.scalars(select(Account).order_by(Account.id)))
         assert [row.credential for row in rows] == ["ok", "needs_auth", "disabled", "needs_auth"]
@@ -77,7 +77,7 @@ def test_old_database_upgrade_preserves_data_and_matches_fresh_schema(tmp_path):
         assert all(row.quota_observed_at is row.quota_units is row.quota_scope is None for row in rows)
         assert session.get(AccountSecret, (1, "credentials")).encrypted_value == b"encrypted fixture bytes (not a real key)"
         provider = session.get(ProviderRow, "fixture")
-        assert provider.capabilities == ["web_search"]
+        assert provider.capabilities == ["web_search", "paper_read"]
         assert provider.enabled is False and provider.options == {"operator": 1}
         assert session.get(Routing, "paper_read").providers == ["fixture"]
         assert session.get(Handle, "h_old") is not None
@@ -102,7 +102,7 @@ def test_old_database_upgrade_preserves_data_and_matches_fresh_schema(tmp_path):
     fresh.close()
 
     restarted = Database(path)
-    restarted.initialize({"fixture": ShippedProvider(["web_search"], options={"new": 2})})
+    restarted.initialize({"fixture": ShippedProvider(["web_search", "paper_read"], options={"new": 2})})
     with restarted.session() as session:
         row = session.get(Account, 1)
         assert row.blocked_capabilities == {
@@ -144,18 +144,19 @@ def test_migration_rejects_invalid_legacy_block_without_losing_data(tmp_path):
 def test_catalog_refresh_preserves_operator_state_and_surfaces_removed_support(tmp_path):
     db = Database(tmp_path / "catalog.sqlite")
     original = {"provider": ShippedProvider(["web_search", "paper_read"], options={"default": "one"}, keyless=True)}
-    db.initialize(original, {"web_search": {"mode": "sequential", "providers": ["provider"]}})
+    db.initialize(original, {"web_search": {"mode": "fanout", "providers": ["provider"]}})
     with db.session() as session:
         row = session.get(ProviderRow, "provider")
         row.enabled, row.options = False, {"override": "saved"}
-        session.get(Routing, "web_search").mode = "fanout"
+        session.get(Routing, "web_search").mode = "sequential"
         session.get(Account, 1).label = "operator account"
-    db.initialize({"provider": ShippedProvider(["paper_read", "citation_verify"], options={"default": "two"})},
-                  {"web_search": {"mode": "sequential", "providers": ["provider"]},
+    db.initialize({"provider": ShippedProvider(["web_search", "paper_read", "citation_verify"],
+                                            options={"default": "two"})},
+                  {"web_search": {"mode": "fanout", "providers": ["provider"]},
                    "paper_read": {"mode": "sequential", "providers": ["provider"]}})
     with db.session() as session:
         provider = session.get(ProviderRow, "provider")
-        assert provider.capabilities == ["paper_read", "citation_verify"]
+        assert provider.capabilities == ["web_search", "paper_read", "citation_verify"]
         assert provider.options == {"override": "saved"} and provider.enabled is False
         assert session.get(Routing, "web_search").mode == "fanout"
         assert session.get(Routing, "web_search").providers == ["provider"]

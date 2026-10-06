@@ -27,6 +27,7 @@ from research_engine.providers.registry import build_registry, default_routes
 from research_engine.router.accounts import AccountSelector
 from research_engine.router.limiter import RequestLimiter
 from research_engine.router.requests import InvalidRequest, for_provider, validate
+from research_engine.router.routes import validate_route
 from research_engine.router.redact import safe_error
 from research_engine.router.results import validate_result
 from research_engine.storage.blobs import BlobStore
@@ -185,15 +186,11 @@ class Engine:
             row = session.get(Routing, cap.value)
             if row is None:
                 return "fanout", []
-            if row.mode not in {"fanout", "sequential"}:
-                raise ToolError("INTERNAL", "Configured routing mode is invalid")
             names = list(row.providers)
-            if any(name not in self.providers or cap not in self.providers[name].capabilities for name in names):
-                raise ToolError("INTERNAL", "Configured route contains an incompatible provider")
-            if len(names) != len(set(names)):
-                raise ToolError("INTERNAL", "Configured route contains duplicate providers")
-            if cap in ASYNC_CAPABILITIES and row.mode != "sequential":
-                raise ToolError("INTERNAL", "Async starts require sequential provider routing")
+            try:
+                validate_route(cap, row.mode, names, self.providers)
+            except ValueError as error:
+                raise ToolError("INTERNAL", "Configured route violates provider coverage rules") from error
             return row.mode, names
 
     def _eligible(self, name: str, cap: Capability) -> tuple[list[tuple[int, str | None]], str]:
@@ -281,7 +278,7 @@ class Engine:
                 last_reason = message
                 # A bad input or missing target is account-independent. Other providers may
                 # still resolve the target, but retrying the same provider with another key cannot.
-                if error.kind in {ErrorKind.BAD_REQUEST, ErrorKind.TARGET}:
+                if error.kind not in {ErrorKind.AUTH, ErrorKind.RATE_LIMITED, ErrorKind.EXHAUSTED}:
                     break
             except asyncio.CancelledError:
                 raise
@@ -294,6 +291,7 @@ class Engine:
                     raise ToolError("NO_PROVIDER_AVAILABLE", "Upstream start outcome is unknown; not retried",
                                     request_id=request_id) from error
                 last_reason = str(classified)
+                break
         return Outcome(name, reason=last_reason)
 
     @staticmethod
@@ -588,7 +586,8 @@ class Engine:
             payload = {"records": records, "not_found": not_found, "per_id_coverage": per_id_coverage}
         metadata_incomplete = metadata is not None and bool(metadata[1]) and any(
             o.result is None for o, _ in metadata_attempts)
-        envelope = {"status": "partial" if pending or metadata_incomplete else "complete", "coverage": coverage,
+        reduced_coverage = pending or metadata_incomplete or bool(coverage["failed"] or coverage["skipped"])
+        envelope = {"status": "partial" if reduced_coverage else "complete", "coverage": coverage,
                     "request_id": request_id, **payload}
         if read and payload.get("document") is not None:
             document = payload["document"]

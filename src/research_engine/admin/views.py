@@ -25,6 +25,7 @@ from wtforms.validators import Optional
 from research_engine.admin.oauth_connect import OAuthConnect
 from research_engine.config import Settings
 from research_engine.router.accounts import SELECTION_MODES, selection_mode
+from research_engine.router.routes import validate_route
 from research_engine.storage.db import (
     Account, Attempt, ClientToken, Database, DocumentCache, Job, ProviderRow,
     QueryCache, RequestRow, Routing, create_client_token,
@@ -270,19 +271,12 @@ def mount_admin(
         async def on_model_change(self, data: dict[str, Any], model: Any, is_created: bool, request: Request) -> None:
             capability = data["capability"]
             providers = data["providers"]
-            if not isinstance(providers, list) or not providers or len(providers) != len(set(providers)):
-                raise ValueError("Provide a nonempty JSON array of distinct provider names")
-            if capability in {"deep_literature_search", "systematic_review", "site_crawl"} and data["mode"] != "sequential":
-                raise ValueError("Job capabilities require sequential routing")
+            def check_route() -> None:
+                if engine is None:
+                    raise ValueError("Routing requires the active provider catalog")
+                validate_route(capability, data["mode"], providers, engine.providers)
 
-            def validate_route() -> None:
-                with db.session() as session:
-                    for name in providers:
-                        provider = session.get(ProviderRow, name)
-                        if provider is None or capability not in provider.capabilities:
-                            raise ValueError(f"Provider {name} does not implement {capability}")
-
-            await anyio.to_thread.run_sync(validate_route)
+            await anyio.to_thread.run_sync(check_route)
 
     class ReadOnlyView(ModelView):
         can_create = can_edit = can_delete = can_export = False

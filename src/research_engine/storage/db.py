@@ -255,12 +255,14 @@ class Database:
         routes: Mapping[str, Any] | None = None,
     ) -> None:
         from research_engine.storage.migrations import run_migrations
+        from research_engine.router.routes import normalize_route, required_mode
         run_migrations(self.engine)
         if catalog is None:
             return
         entries = catalog.items() if isinstance(catalog, Mapping) else ((p.name, p) for p in catalog)
+        catalog_map = dict(entries)
         with self.session() as session:
-            for name, descriptor in entries:
+            for name, descriptor in catalog_map.items():
                 shipped_capabilities = [
                     _cap_name(cap) for cap in _descriptor_value(descriptor, "capabilities", [])
                 ]
@@ -280,17 +282,23 @@ class Database:
                     provider.capabilities = shipped_capabilities
             for capability, route in (routes or {}).items():
                 key = _cap_name(capability)
-                if session.get(Routing, key) is not None:
+                existing = session.get(Routing, key)
+                if existing is not None:
+                    existing.mode = required_mode(key)
+                    existing.providers = normalize_route(key, list(existing.providers), catalog_map)
                     continue
-                mode = _descriptor_value(route, "mode", "fanout")
+                mode = _descriptor_value(route, "mode", required_mode(key))
+                if mode != required_mode(key):
+                    raise ValueError(f"Invalid seeded mode for {key}")
                 provider_names = list(_descriptor_value(route, "providers", []))
-                compatible = [
-                    name for name in provider_names
-                    if (provider := session.get(ProviderRow, name)) is not None
-                    and key in provider.capabilities
-                ]
-                if compatible:
-                    session.add(Routing(capability=key, mode=mode, providers=compatible))
+                normalized = normalize_route(key, provider_names, catalog_map)
+                session.add(Routing(capability=key, mode=mode, providers=normalized))
+            # Existing operator routes are also upgraded if the catalog's default
+            # seed list changed. Do not overwrite their selected provider order.
+            for route in session.scalars(select(Routing)):
+                if route.capability not in (routes or {}):
+                    route.mode = required_mode(route.capability)
+                    route.providers = normalize_route(route.capability, list(route.providers), catalog_map)
 
     def close(self) -> None:
         self.engine.dispose()
