@@ -618,7 +618,10 @@ class Engine:
                 assertions = evidence.get(key, [])
                 found = any(row.get("found") is True for row in assertions if isinstance(row, dict))
                 completed_miss = bool(assertions) and all(isinstance(row, dict) and row.get("found") is False
-                                                          for row in assertions)
+                                                          and row.get("reason") not in {
+                                                              "ambiguous", "unresolved", "insufficient_identifier",
+                                                              "unsupported_citation_text", "not_found_or_unsupported",
+                                                          } for row in assertions)
                 unfinished = any(o.result is None and key in attempted for o, attempted in metadata_attempts)
                 if key in unresolved and completed_miss and not unfinished:
                     not_found.append(key)

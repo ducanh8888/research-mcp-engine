@@ -102,14 +102,23 @@ def register_tools(engine) -> FastMCP:
     @mcp.tool(output_schema=MetadataOutput.model_json_schema())
     async def paper_metadata(ids: list[str] | None = None, citation: str | None = None,
                              fresh: bool = False, deadline_s: float = DEFAULT_DEADLINE_S) -> CallToolResult:
-        """Resolve bibliographic metadata, falling back independently for missing identifiers."""
+        """Resolve identifiers or citation text with conservative bibliographic matching.
+
+        Plain citation text is established only when one candidate has matching title/year
+        evidence and a strong identifier; ambiguous or unresolved inputs remain unknown.
+        The response retains per-input provider coverage and provenance.
+        """
         return await invoke("paper_metadata", {"ids": ids, "citation": citation,
                                               "fresh": fresh, "deadline_s": deadline_s})
 
     @mcp.tool(output_schema=SearchOutput.model_json_schema())
     async def paper_related(seeds: list[str], mode: str = "similar", limit: int = 8,
                             fresh: bool = False, deadline_s: float = DEFAULT_DEADLINE_S) -> CallToolResult:
-        """Find similar, citing or cited papers from the selected scholarly providers."""
+        """Find similar, citing, or cited papers for every supplied seed.
+
+        Related results preserve each seed, mode, provider, and coverage outcome;
+        supported modes are ``similar``, ``citing``, and ``cited``.
+        """
         return await invoke("paper_related", {"seeds": seeds, "mode": mode, "limit": limit,
                                              "fresh": fresh, "deadline_s": deadline_s})
 
