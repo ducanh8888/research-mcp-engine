@@ -1,4 +1,4 @@
-"""Private MCP request authentication with immediate bearer-token revocation."""
+"""MCP request authentication with immediate bearer-token revocation."""
 
 from __future__ import annotations
 

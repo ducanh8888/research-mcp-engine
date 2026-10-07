@@ -5,8 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "research-engine"
 version = "0.1.0"
-description = "Private MCP research retrieval, verification and evidence fusion engine"
+description = "Multi-provider research gateway for AI agents over MCP"
+readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["mcp", "research", "ai-agents", "search", "academic-search"]
 dependencies = [
   "fastmcp==4.0.10", "mcp>=2.2,<3", "fastapi==0.142.2", "uvicorn==0.54.0",
   "sqlalchemy[asyncio]==2.1.3", "sqladmin==0.32.0", "httpx==0.28.1",
@@ -16,6 +18,10 @@ dependencies = [
   "beautifulsoup4>=4.13,<5", "rapidfuzz>=3,<4", "python-dotenv>=1,<2",
   "url-normalize>=2.2,<3",
 ]
+
+[project.urls]
+Homepage = "https://mr16666.com/products"
+Organization = "https://mr16666.com"
 
 [project.optional-dependencies]
 dev = ["pytest>=9,<10", "pytest-asyncio>=1,<2", "respx>=0.22,<1", "ruff>=0.13,<1"]

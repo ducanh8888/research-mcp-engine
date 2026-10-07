@@ -13,12 +13,12 @@
   },
   {
     "id": "private-mcp",
-    "query": "How can an MCP server keep bearer tokens safe when exposed only on a Tailscale network?",
+    "query": "How can an MCP server protect bearer tokens when serving clients over HTTP?",
     "documents": [
       {"id": "dns", "title": "Naming a Tailscale device", "text": "MagicDNS assigns convenient names to machines connected to a tailnet.", "relevance": 1},
       {"id": "oauth", "title": "OAuth marketing integration", "text": "A public campaign platform uses browser redirects to connect social media accounts.", "relevance": 0},
-      {"id": "token", "title": "Private MCP authentication", "text": "Require bearer tokens for every MCP request, store only token hashes, support revocation, and bind the server to a loopback or tailnet interface.", "relevance": 2},
-      {"id": "origin", "title": "Network and origin guards", "text": "Tailnet ACLs restrict network access. An Origin allowlist prevents untrusted browser origins from calling the authenticated MCP service.", "relevance": 2},
+      {"id": "token", "title": "MCP authentication", "text": "Require bearer tokens for every MCP request, store only token hashes, support revocation, and restrict the server's network exposure.", "relevance": 2},
+      {"id": "origin", "title": "Network and origin guards", "text": "Network policy restricts access. An Origin allowlist prevents untrusted browser origins from calling the authenticated MCP service.", "relevance": 2},
       {"id": "secret", "title": "Credential storage", "text": "Keep provider credentials encrypted at rest and exclude bearer secrets from access logs and source control.", "relevance": 2},
       {"id": "proxy", "title": "Public reverse proxy", "text": "A reverse proxy exposes an application to anyone on the internet with a public HTTPS URL.", "relevance": 0}
     ]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a running private endpoint through the actual MCP HTTP transport."""
+"""Check a running endpoint through the actual MCP HTTP transport."""
 
 from __future__ import annotations
 

@@ -19,3 +19,15 @@ build/
 .local/
 playwright-report/
 test-results/
+.claude/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.key
+*.pem
+*.p12
+*.pfx
+bootstrap.json

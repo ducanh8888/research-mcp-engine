@@ -1,18 +1,12 @@
 # Repository Guidelines
 
-## Current state and authority
+## Project and source of truth
 
-Code baseline: `8112a5475fcf7f8ec5339fa8c80e5a3c95e5f2b1`.
-`main` is frozen. Work on `research-specialists`; do not advance main without an owner instruction.
-
-Read [requirements](docs/requirements-notes.md), [design v4](docs/design.md),
-[roadmap](docs/roadmap.md), [cleanup](docs/cleanup.md) and [code audit](docs/code-audit.md).
-Requirements record owner scope; design defines contracts; roadmap owns sequencing/acceptance.
-Research/01–07 is historical evidence, not an implementation checklist.
-
-The engine is implemented in part: `src/`, `tests/`, migrations, Docker and CLI exist.
-Hosted-MCP normalized adapters and the OmniRoute bridge are missing at baseline.
-Do not call a phase done because modules/fixtures exist.
+Research MCP exposes research capabilities over Streamable HTTP. Read the
+[README](README.md), [architecture](docs/architecture.md), [providers](docs/providers.md),
+[routing and fusion](docs/routing-and-fusion.md), and [deployment](docs/deployment.md)
+before changing behavior. Verify the implementation and tests for each claim; a
+registered adapter or fixture pass does not establish live provider availability.
 
 ## Owner directive — evidence coverage
 
@@ -45,9 +39,8 @@ Do not add fallback architecture, provider chains, scoring policy, classifiers, 
 other control-plane machinery. One MCP search request should gather the strongest
 available independent evidence set in that single request.
 
-This instruction overrides earlier search-provider fallback language. Apply the open
-C33 correction in [cleanup](docs/cleanup.md) and its [acceptance checks](docs/roadmap.md#evidence-coverage-correction).
-Existing implementation and test counts do not establish compliance with this directive.
+Preserve this behavior when adding a provider or changing an operator route;
+fixture counts alone do not establish live account or client availability.
 
 ## Scope
 
@@ -56,14 +49,14 @@ Use one small explicit-provider bridge. Build research-specialist gaps and their
 selection: priority, round-robin, quota-aware. Commodity accounts stay upstream in OmniRoute.
 
 Reuse compatible code, preserve attribution and avoid importing a model router's control plane.
-Deferred items are not an automatic follow-on queue. Remove/replace marked shortcuts using
-their closure criteria; preserve account availability retries, sequential source/metadata
-progression, OAuth and restart semantics.
+Do not add speculative features; preserve account availability retries, sequential
+source/metadata progression, OAuth and restart semantics.
 
 ## Structure
 
 `src/research_engine/`: server, router, providers, merge, jobs, admin, storage, cache/config/CLI.
-`tests/`: pytest fixtures/transport tests. `docs/`: current contracts and historical notes.
+`tests/`: pytest fixtures/transport tests. `docs/`: architecture, providers,
+routing/fusion, deployment and development guides.
 `scripts/`: MCP smoke and optional rerank benchmark. `benchmarks/`: limited recorded evidence.
 
 ## Development commands
@@ -83,7 +76,7 @@ Do not change the lockfile merely to make a local environment pass.
 
 For documentation-only edits, check relative links, referenced paths, consistency and whitespace;
 application tests are not required unless executable behavior also changes.
-For code edits, run focused meaningful checks plus required phase checks.
+For code edits, run focused meaningful checks plus the frozen test suite and lint.
 
 ## Validation and commits
 
@@ -92,7 +85,7 @@ fixture tests, recorded artifacts, live providers and actual remote clients.
 Missing credentials/eligible plans leave checks pending, not successful.
 
 Keep commits focused; review tracked and new files. Preserve operator routes, data, credentials
-and notices during cutover. Python: four-space indentation, snake_case functions/modules,
+and notices during upgrades. Python: four-space indentation, snake_case functions/modules,
 PascalCase classes; follow existing Ruff configuration.
 
 ## Secrets

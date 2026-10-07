@@ -160,9 +160,9 @@ def mount_admin(
     app: Any, settings: Settings, db: Database, secret_store: Any,
     engine: Any = None, oauth_manager: Any = None,
 ) -> Admin:
-    """Mount private administration without introducing a second service layer."""
+    """Mount administration without introducing a second service layer."""
     admin = Admin(
-        app, engine=db.engine, session_maker=db.Session, title="Research Engine",
+        app, engine=db.engine, session_maker=db.Session, title="Research MCP",
         templates_dir=str(Path(__file__).parent / "templates"),
         authentication_backend=AdminAuthentication(settings),
     )

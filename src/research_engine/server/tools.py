@@ -18,10 +18,13 @@ from research_engine.server.schemas import (
 
 
 def register_tools(engine) -> FastMCP:
-    mcp = FastMCP("Research Engine", instructions=(
-        "Private retrieval infrastructure. Use search results as pointers to sources. Read handles to retrieve "
-        "source text. Source provenance and citation tallies are not evidence interpretation. "
-        "Check coverage and partial status. Async tools return owned jobs; poll using get_job."
+    mcp = FastMCP("Research MCP", instructions=(
+        "Choose a capability by task: web/news search, paper search/metadata/related, citations, site or repo. "
+        "Search returns source pointers, not full text; follow with web_read or paper_read on a URL/handle. "
+        "Inspect status and coverage; partial means some configured sources failed or were unavailable. "
+        "Provenance attributes a source, not truth. Web and paper providers have separate routes. "
+        "Poll async site_crawl/review jobs with get_job. fresh=true bypasses engine cache only; upstream "
+        "cache bypass is not guaranteed."
     ))
 
     def response(payload: dict[str, Any], error: bool = False) -> CallToolResult:

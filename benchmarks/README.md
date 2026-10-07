@@ -1,10 +1,10 @@
 # Optional reranking benchmark
 
-Run from the repository root after installing the CPU extra:
+Run from the repository root after installing the optional CPU extra:
 
 ```bash
-.venv/bin/pip install -e '.[local-rerank]'
-.venv/bin/python scripts/benchmark_rerank.py --repetitions 3
+uv sync --frozen --extra local-rerank
+uv run --frozen python scripts/benchmark_rerank.py --repetitions 3
 ```
 
 The first run downloads `Xenova/ms-marco-MiniLM-L-6-v2` into
@@ -33,14 +33,12 @@ labels, not live provider results or a representative research evaluation.
 They confirm real model execution and reproducible measurement. Reranking
 remains disabled by default; evaluate your own queries before enabling it.
 
-Infinity, Jina, Cohere and Voyage request shapes and failure behavior have
-transport fixtures. This documentation pass did not rerun them or make live calls.
-Under [design v4](../docs/design.md), API rerank development moves to OmniRoute;
-local Infinity/FastEmbed remains. The ordinary engine search path does not invoke
-the rerank module at the frozen checkpoint. Module fixtures and this benchmark
-do not prove that end-to-end integration.
+The ordinary search path supports optional reranking through the configured
+OmniRoute, Infinity, or FastEmbed/local backend. It is disabled by default; a
+backend failure preserves the fused order. The recorded artifact is an authored
+local CPU exercise, not end-to-end quality evidence across live providers.
 
 Existing `weighted_rrf`, `hierarchical_rrf`, `fuzzy_relationships`,
 `near_duplicate_links` and `version_links` helpers are disabled experiments,
-excluded from the current roadmap. Their tests do not justify enabling them.
+not part of the active retrieval policy. Their tests do not justify enabling them.
 Relationship helpers preserve distinct IDs and provenance.

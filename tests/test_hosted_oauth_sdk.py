@@ -22,7 +22,7 @@ async def provider(*, expires_in: int = 600):
     await storage.set_client_info(OAuthClientInformationFull(client_id="sdk-client"))
     await storage.set_tokens(OAuthToken(access_token="first", refresh_token="refresh", expires_in=expires_in))
     auth = NonSerializingOAuthClientProvider(server_url="https://mcp.example.org/mcp", storage=storage,
-              client_metadata=OAuthClientMetadata(client_name="Research Engine",
+              client_metadata=OAuthClientMetadata(client_name="Research MCP",
                  redirect_uris=[AnyUrl("https://callback.example.org/oauth/callback")]))
     return auth, secrets
 

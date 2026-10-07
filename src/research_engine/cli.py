@@ -1,4 +1,4 @@
-"""Private first-boot, token and single-process server commands."""
+"""First-boot, token and single-process server commands."""
 
 from __future__ import annotations
 

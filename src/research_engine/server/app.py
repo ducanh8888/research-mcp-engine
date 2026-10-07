@@ -29,7 +29,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         finally:
             await engine.stop()
 
-    app = FastAPI(title="Research Engine", lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="Research MCP", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.engine, app.state.mcp = engine, mcp
 
     @app.get("/health")

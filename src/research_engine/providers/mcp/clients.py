@@ -71,7 +71,7 @@ class AccountMCPClientManager:
         scopes = options.get("scopes", HOSTED_SCOPES.get(provider, []))
         scope = scopes if isinstance(scopes, str) else " ".join(scopes)
         metadata = OAuthClientMetadata(
-            client_name="Research Engine",
+            client_name="Research MCP",
             redirect_uris=[AnyUrl(redirect_uri)],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
