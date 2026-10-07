@@ -21,6 +21,8 @@ from sqlalchemy import select
 
 from research_engine.providers.base import Capability, ErrorKind, Provider, ProviderError
 from research_engine.providers.omniroute import OmniRouteConnection, OmniRouteProvider
+from research_engine.providers.scholar.crossref import CrossrefProvider
+from research_engine.providers.scholar.openalex import OpenAlexProvider
 from research_engine.router.execute import Engine
 from research_engine.server.app import create_app
 from research_engine.server.schemas import Document, Hit, Result
@@ -211,6 +213,70 @@ async def call(runtime: Runtime, tool: str, args: dict) -> tuple[dict, bool]:
     payload = json.loads(response.content[0].text)
     assert payload == response.structured_content
     return payload, bool(response.is_error)
+
+
+@pytest.mark.parametrize("mode", ["similar", "citing", "cited"])
+async def test_public_related_modes_preserve_each_seed_and_partial_evidence(tmp_path: Path, mode: str):
+    seeds = ["W1", "W2"]
+
+    def openalex(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/works":
+            seed = request.url.params["filter"].rsplit(":", 1)[-1]
+            return httpx.Response(200, json={"results": [{"id": f"https://openalex.org/C{seed[-1]}",
+                                                            "display_name": "Citing result"}]})
+        work = request.url.path.rsplit("/", 1)[-1]
+        if work in seeds:
+            return httpx.Response(200, json={"id": f"https://openalex.org/{work}",
+                "related_works": [f"https://openalex.org/W9{work[-1]}"],
+                "referenced_works": [f"https://openalex.org/W8{work[-1]}"]})
+        return httpx.Response(200, json={"id": f"https://openalex.org/{work}",
+                                          "display_name": f"Neighbor {work}"})
+
+    sources = [OpenAlexProvider(), EvidenceSource("unavailable", Capability.PAPER_RELATED,
+                                                  error=ProviderError(ErrorKind.TRANSIENT, "fixture outage"))]
+    async with mcp_fixture(tmp_path, sources, {"paper_related": ["openalex", "unavailable"]},
+                           upstream=openalex) as (runtime, _):
+        payload, failed = await call(runtime, "paper_related", {"seeds": seeds, "mode": mode, "limit": 4})
+    assert not failed and payload["status"] == "partial"
+    assert_coverage(payload, {"openalex"}, failed={"unavailable"})
+    assert set(payload["per_seed_coverage"]) == set(seeds)
+    assert all(payload["per_seed_coverage"][seed][0]["found"] for seed in seeds)
+    assert {source["related_seed"] for item in payload["items"] for source in item["providers"]} == set(seeds)
+    assert all(source["related_mode"] == mode for item in payload["items"]
+               for source in item["providers"])
+
+
+@pytest.mark.parametrize("citation,reason", [
+    ("10.1234/verified", "found"),
+    ("Author. A Precisely Matching Paper. (2021). Journal.", "found"),
+    ("A Precisely Matching Paper. 2021", "unknown"),
+])
+async def test_public_metadata_resolves_ids_and_preserves_citation_ambiguity(
+    tmp_path: Path, citation: str, reason: str,
+):
+    def crossref(request: httpx.Request) -> httpx.Response:
+        def record(identifier: str) -> dict:
+            return {"DOI": identifier, "title": ["A Precisely Matching Paper"],
+                    "published": {"date-parts": [[2021]]}}
+
+        if request.url.path.startswith("/works/"):
+            return httpx.Response(200, json={"message": record("10.1234/verified")})
+        records = [record("10.1234/verified")]
+        if citation == "A Precisely Matching Paper. 2021":
+            records.append(record("10.1234/other"))
+        return httpx.Response(200, json={"message": {"items": records}})
+
+    source = CrossrefProvider()
+    async with mcp_fixture(tmp_path, [source], {"paper_metadata": ["crossref"]},
+                           upstream=crossref) as (runtime, _):
+        args = {"ids": [citation]} if citation.startswith("10.") else {"citation": citation}
+        payload, failed = await call(runtime, "paper_metadata", args)
+    assert not failed and payload["per_id_coverage"][citation]["status"] == reason
+    if reason == "found":
+        assert payload["records"][0]["ids"]["doi"] == "10.1234/verified"
+    else:
+        assert payload["records"] == [] and citation not in payload["not_found"]
+        assert payload["per_id_coverage"][citation]["sources"][0]["reason"] == "ambiguous"
 
 
 def hit(provider: str, name: str, *, rank: int = 1, doi: str | None = None) -> Hit:

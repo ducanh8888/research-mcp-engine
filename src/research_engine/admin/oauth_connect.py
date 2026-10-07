@@ -19,6 +19,10 @@ class OAuthConnect:
         self.db = db
         self.secret_store = secret_store
 
+    @property
+    def state_timeout(self) -> float:
+        return self.manager.oauth.timeout
+
     async def start(self, request: Request, account_id: int, url: str = "") -> str:
         def account_config() -> tuple[str, dict[str, Any]]:
             with self.db.session() as session:
@@ -50,7 +54,7 @@ class OAuthConnect:
         now = time.time()
         pending = {
             key: value for key, value in request.session.get("oauth_states", {}).items()
-            if now - value.get("started", 0) < 600
+            if now - value.get("started", 0) < self.state_timeout
         }
         if len(pending) >= 5:
             pending.pop(next(iter(pending)))
@@ -66,9 +70,9 @@ class OAuthConnect:
             raise ValueError("OAuth state does not belong to this admin session")
         flow = pending.pop(matching)
         request.session["oauth_states"] = pending
-        if time.time() - flow["started"] >= 600:
+        if time.time() - flow["started"] >= self.state_timeout:
             raise ValueError("OAuth connect expired; start again")
-        result = await self.manager.oauth_callback(
+        result = self.manager.oauth_callback(
             state=state,
             code=request.query_params.get("code"),
             error=request.query_params.get("error"),

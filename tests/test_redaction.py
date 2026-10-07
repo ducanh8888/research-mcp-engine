@@ -23,11 +23,17 @@ class LeakyProvider(Provider):
 
 
 def test_nested_secret_and_url_are_not_reflected():
-    secret = "sensitive-access-token"
-    error = ProviderError(ErrorKind.AUTH, f"Visit https://example.org/?token={secret} to reconnect")
-    message = safe_error(error, {"nested": {"oauth": {"access_token": secret}}})
-    assert secret not in message and "https://" not in message
-    assert message.startswith("auth:")
+    secrets = {
+        "api_key": "fixture-api-key-sensitive",
+        "bearer": "Bearer fixture-client-bearer-sensitive",
+        "refresh_token": "fixture-refresh-token-sensitive",
+        "code": "fixture-oauth-code-sensitive",
+        "query": "https://example.org/callback?access_token=fixture-query-token-sensitive",
+    }
+    error = ProviderError(ErrorKind.AUTH, "Upstream response: " + " ".join(secrets.values()), status_code=401)
+    message = safe_error(error, {"nested": {"oauth": secrets}})
+    assert all(value not in message for value in secrets.values())
+    assert message == "auth: upstream HTTP 401"
     unknown = safe_error(ProviderError(ErrorKind.TRANSIENT,
                                         "contact provider with unknown-private-string"))
     assert "unknown-private-string" not in unknown

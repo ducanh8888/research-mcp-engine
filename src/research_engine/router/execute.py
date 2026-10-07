@@ -399,6 +399,12 @@ class Engine:
         if cap in SEARCH_CAPABILITIES:
             merged = await asyncio.to_thread(merge_hits, [hit for result in results for hit in result.hits], limit)
             await asyncio.to_thread(self._persist_identities, merged)
+            if cap == Capability.PAPER_RELATED:
+                per_seed: dict[str, list[Any]] = {}
+                for result in results:
+                    for seed, assertion in result.per_id_coverage.items():
+                        per_seed.setdefault(seed, []).append(assertion)
+                return {"items": merged.items, "per_seed_coverage": per_seed}
             return {"items": merged.items}
         if cap in {Capability.WEB_READ, Capability.PAPER_READ}:
             document = next((r.document for r in results if r.document is not None), None)

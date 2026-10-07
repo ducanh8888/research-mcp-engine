@@ -33,6 +33,27 @@ from research_engine.storage.db import (
 )
 
 
+class AdminNoStore:
+    """Prevent authenticated admin responses from entering intermediary caches."""
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/admin"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_no_store(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                headers = [(name, value) for name, value in message.get("headers", [])
+                           if name.lower() != b"cache-control"]
+                message = {**message, "headers": [*headers, (b"cache-control", b"no-store")]}
+            await send(message)
+
+        await self.app(scope, receive, send_no_store)
+
+
 class AdminCSRF:
     """Check unsafe requests, including SQLAdmin forms and JavaScript deletes."""
 
@@ -108,6 +129,7 @@ class AdminAuthentication(AuthenticationBackend):
                 same_site="lax", https_only=parsed.scheme == "https", path="/admin",
             ),
             Middleware(AdminCSRF, origins=[origin, *settings.trusted_origins]),
+            Middleware(AdminNoStore),
         ]
 
     async def login(self, request: Request) -> bool:
@@ -392,7 +414,7 @@ def mount_admin(
                     else:
                         raise ValueError("Unknown operation")
                 except (ValueError, KeyError, TypeError) as exc:
-                    error = str(exc)
+                    error = f"Operation failed ({type(exc).__name__})"
                     status_code = 400
 
             def choices() -> dict[str, Any]:
@@ -421,7 +443,8 @@ def mount_admin(
             try:
                 result = await oauth.callback(request)
             except ValueError as exc:
-                return PlainTextResponse(str(exc), status_code=400)
+                return PlainTextResponse(f"OAuth callback rejected ({type(exc).__name__})", status_code=400,
+                                         headers={"Cache-Control": "no-store"})
             response = await self.templates.TemplateResponse(request, "admin/oauth_result.html", {"result": result})
             response.headers["Cache-Control"] = "no-store"
             return response

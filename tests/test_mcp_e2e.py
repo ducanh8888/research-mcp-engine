@@ -129,6 +129,39 @@ async def test_http_discovery_is_stable_without_provider_accounts(running_server
         assert "account_id" not in properties
 
 
+async def test_http_discovery_describes_workflows_and_validated_choices(running_server: Runtime):
+    async with running_server.client() as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+    assert len(tools) == 17
+    for name, hints in {
+        "web_search": ("web", "web_read", "fresh", "deadline_s"),
+        "news_search": ("news", "recency"),
+        "web_read": ("cursor", "source"),
+        "paper_search": ("academic", "paper_read"),
+        "paper_metadata": ("citation", "unknown", "per_id_coverage"),
+        "paper_related": ("seeds", "similar", "citing", "cited"),
+        "citation_verify": ("citation", "claim", "tallies"),
+        "citation_graph": ("direction", "in", "out", "both"),
+        "repo_search": ("repos", "code", "issues"),
+        "get_job": ("job_id", "wait_s"),
+    }.items():
+        description = tools[name].description.lower()
+        assert all(hint in description for hint in hints), name
+    for tool_name, field, values in (
+        ("news_search", "recency", {"day", "week", "month", "year"}),
+        ("paper_related", "mode", {"similar", "citing", "cited"}),
+        ("citation_graph", "direction", {"in", "out", "both"}),
+        ("repo_search", "mode", {"repos", "code", "issues"}),
+    ):
+        schema = tools[tool_name].input_schema["properties"][field]
+        choices = schema.get("enum") or next((part["enum"] for part in schema.get("anyOf", [])
+                                               if "enum" in part), [])
+        assert set(choices) == values
+    for tool in tools.values():
+        assert "provider" not in tool.input_schema.get("properties", {})
+        assert "account_id" not in tool.input_schema.get("properties", {})
+
+
 class SyntheticSearch(Provider):
     name = "http-fixture-search"
     capabilities = frozenset({Capability.WEB_SEARCH})

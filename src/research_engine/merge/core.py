@@ -217,11 +217,14 @@ def merge_hits(
             }
             if source["source_ids"] and source["source_ids"] != source["ids"]:
                 provenance["source_ids"] = source["source_ids"]
-            transport = (source.get("raw") or {}).get("transport")
-            if transport == "omniroute":
-                provenance["transport"] = transport
-            if options.get("include_raw") and source.get("raw"):
-                provenance["raw"] = source["raw"]
+            raw = source.get("raw") or {}
+            if raw.get("transport") == "omniroute":
+                provenance["transport"] = "omniroute"
+            for key in ("related_seed", "related_mode"):
+                if key in raw:
+                    provenance[key] = raw[key]
+            if options.get("include_raw") and raw:
+                provenance["raw"] = raw
             providers.append(provenance)
         item["providers"] = providers
         item["score"] = sum(weights.get(provider, 1.0) / (60 + rank) for provider, rank in best_ranks.items())
