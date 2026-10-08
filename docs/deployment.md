@@ -68,11 +68,36 @@ Keep SQLite, WAL, blobs, `config.yaml`, encryption key, and session secret toget
 
 ## Verification status
 
-The frozen fixture suite passes **413 tests** and Ruff passes for the current source. The public MCP C17 matrix covers multi-seed similar/citing/cited, DOI and conservative plain/ambiguous citation outcomes, and partial provider failure. Synthetic C27 checks cover request/attempt, Account Test, job and admin/OAuth error boundaries; live upstream OAuth remains account/consent-dependent. An actual Claude Code or agentRT remote client smoke has not passed until it connects through the HTTPS tunnel and exercises web search → read and paper search. Container/public health and session/auth checks must be observed after the runtime origin cutover; a successful local fixture or image build does not establish public acceptance.
+### Fixtures
+
+The frozen fixture suite passes **413 tests**; Ruff and `uv lock --check` pass, and CI is green on `main`. The public MCP C17 matrix covers multi-seed similar/citing/cited, DOI and conservative plain/ambiguous citation outcomes, and partial provider failure. Synthetic C27 checks keep fake API keys, bearer/refresh tokens, OAuth codes and sensitive URL parameters out of provider errors, Account Test, request/attempt rows, job errors, MCP responses, admin pages and OAuth error paths. OAuth fixtures cover session-bound, single-use and expiring state using the coordinator timeout.
+
+### Live deployment record (2026-10-08, commit `aeba3a3`)
+
+Observed against the running Compose container behind the existing tunnel:
+
+| Check | Observed |
+|---|---|
+| Container | Healthy, 0 restarts; read-only root, `cap_drop: ALL`, no-new-privileges; publishes only `172.18.0.1:8765` |
+| Health | `http://172.18.0.1:8765/health` and `https://research.ducanh.cloud/health` return 200 |
+| Dashboard | `/admin` → HTTPS login; wrong password rejected (400); correct login → `/admin/` (200); Secure session cookie; `Cache-Control: no-store` |
+| MCP auth | Missing/invalid Bearer → 401; valid token initializes and lists 17 tools; unrelated Host or Origin → 403 |
+| `web_search` | `complete`: all seven routed providers succeeded |
+| `news_search` | `partial`: Serper, Tavily, Firecrawl succeeded; Nimble failed |
+| `paper_search` | `partial`: OpenAlex, Crossref, arXiv succeeded; Semantic Scholar failed; Consensus skipped (no key) |
+| `web_read` | `complete` via Jina Reader, including a persisted search handle read after a container restart |
+
+Live provider availability varies with upstream accounts and rate limits; a failed or skipped provider only reduces coverage and is reported as `partial`.
+
+### Pending
+
+- An actual Claude Code or agentRT client has not yet been run against `https://research.ducanh.cloud/mcp` (search → read and paper search).
+- Live Scite/Elicit OAuth requires the account owner to approve the provider consent screen via Account → Connect OAuth.
+- The admin password is still the bootstrap value; rotate it and remove `data/bootstrap.json` once a dedicated client token is stored elsewhere.
 
 Historical request/job retention policy (C30), a representative rerank benchmark, live two-account specialist failover without two eligible accounts, and upstream `fresh=true` cache bypass are explicitly **non-blocking** for this deployment; each remains a separate operational/evaluation limitation.
 
-Current seeded routes are web: DuckDuckGo, Exa, Serper, Ollama, Tavily, Firecrawl, Nimble; news: Serper, Tavily, Firecrawl, Nimble; read: Jina Reader, Firecrawl, Tavily, Nimble, then local trafilatura. Search fanout is concurrent, uses conservative exact dedup and plain RRF (`k=60`), and returns partial coverage rather than silently invoking retained direct commodity search adapters. Optional reranking occurs only after fusion and preserves RRF ordering on failure.
+Current seeded routes are web: DuckDuckGo, Exa, Serper, Ollama, Tavily, Firecrawl, Nimble; news: Serper, Tavily, Firecrawl, Nimble; read: Jina Reader, Firecrawl, Tavily, Nimble, then local trafilatura. Search fanout is concurrent, uses conservative exact dedup and plain RRF (`k=60`), and returns partial coverage rather than silently invoking retained direct commodity search adapters. Optional reranking occurs only after fusion and preserves RRF ordering on failure. A sequential read that succeeds on its first usable source is `complete`; unused later readers are listed as skipped, not missing.
 
 ## Security and limitations
 
