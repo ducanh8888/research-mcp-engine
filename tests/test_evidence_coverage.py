@@ -764,6 +764,24 @@ async def test_source_read_and_unresolved_metadata_keep_sequential_semantics(tmp
     assert not error and payload["document"]["text"] == "Original source text"
     assert empty.calls and read.calls
     assert_coverage(payload, {"read"}, failed={"empty"})
+    assert payload["status"] == "partial"
+
+    first_reader = EvidenceSource(
+        "first-reader",
+        Capability.WEB_READ,
+        Result(document=Document(url="https://example.org/b", text="First reader text", source="first-reader")),
+    )
+    unused = EvidenceSource("unused-reader", Capability.WEB_READ, Result())
+    async with mcp_fixture(
+        tmp_path / "first-read",
+        [first_reader, unused],
+        {"web_read": [first_reader.name, unused.name]},
+        modes={"web_read": "sequential"},
+    ) as (runtime, _):
+        payload, error = await call(runtime, "web_read", {"target": "https://example.org/b", "fresh": True})
+    # An unused later reader is not missing coverage for a usable source document.
+    assert not error and payload["status"] == "complete" and not unused.calls
+    assert_coverage(payload, {"first-reader"}, skipped={"unused-reader"})
 
     class MetadataSource(EvidenceSource):
         def __init__(self, name: str, found: str):

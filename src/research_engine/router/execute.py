@@ -37,6 +37,9 @@ from research_engine.storage.db import (
 )
 
 
+NOT_NEEDED = "not needed after a usable source"
+
+
 class ToolError(Exception):
     def __init__(self, code: str, message: str, *, coverage: dict | None = None,
                  request_id: str | None = None, retry_after: float | None = None):
@@ -594,7 +597,7 @@ class Engine:
                 if outcome.result is not None or outcome.upstream_ref is not None or outcome.pending:
                     break
             selected = {o.provider for o in outcomes}
-            outcomes.extend(Outcome(name, reason="not needed after successful fallback", skipped=True)
+            outcomes.extend(Outcome(name, reason=NOT_NEEDED, skipped=True)
                             for name in names if name not in selected)
         coverage = self._coverage(outcomes)
         succeeded = [o for o in outcomes if o.result is not None or o.upstream_ref]
@@ -637,7 +640,9 @@ class Engine:
             payload = {"records": records, "not_found": not_found, "per_id_coverage": per_id_coverage}
         metadata_incomplete = metadata is not None and bool(metadata[1]) and any(
             o.result is None for o, _ in metadata_attempts)
-        reduced_coverage = pending or metadata_incomplete or bool(coverage["failed"] or coverage["skipped"])
+        # A later reader or job provider left unused after a usable result is not missing coverage.
+        missing = [entry for entry in coverage["skipped"] if entry["reason"] != NOT_NEEDED]
+        reduced_coverage = pending or metadata_incomplete or bool(coverage["failed"] or missing)
         envelope = {"status": "partial" if reduced_coverage else "complete", "coverage": coverage,
                     "request_id": request_id, **payload}
         if read and payload.get("document") is not None:
