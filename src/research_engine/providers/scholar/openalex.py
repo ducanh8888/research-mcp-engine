@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from collections import deque
 from typing import Any
 from urllib.parse import quote
 
 from research_engine.providers.base import Capability, ErrorKind, Hit, Provider, ProviderError, Result
-from .common import (abstract_document, bibliographic, citation_result, doi, graph_edge, graph_node,
+from .common import (abstract_document, arxiv_id, bibliographic, citation_result, doi, graph_edge, graph_node,
                      input_ids, json_request, limit, metadata_result, pdf_document, related_mode, year_range)
 
 BASE = "https://api.openalex.org"
@@ -20,6 +21,9 @@ def inverted_abstract(index: dict[str, list[int]] | None) -> str | None:
     return " ".join(positions[position] for position in sorted(positions))
 
 
+ARXIV_DOI_PREFIX = "10.48550/arxiv."
+
+
 def normalize(work: dict[str, Any], rank: int = 1) -> Hit:
     identifier = str(work.get("id", "")).rsplit("/", 1)[-1]
     ids = {"openalex": identifier} if identifier else {}
@@ -27,6 +31,9 @@ def normalize(work: dict[str, Any], rank: int = 1) -> Hit:
         value = (work.get("ids") or {}).get(field) or (work.get("doi") if field == "doi" else None)
         if value:
             ids[field] = doi(value) if field == "doi" else str(value).rsplit("/", 1)[-1]
+    # arXiv's DataCite DOI names the same preprint, so it is an exact alias.
+    if ids.get("doi", "").startswith(ARXIV_DOI_PREFIX):
+        ids["arxiv"] = ids["doi"].removeprefix(ARXIV_DOI_PREFIX)
     location = work.get("primary_location") or {}
     source = location.get("source") or {}
     return Hit(provider="openalex", id="openalex:" + identifier, rank=rank,
@@ -44,6 +51,9 @@ def target_id(target: str) -> str | None:
     identifier = doi(target)
     if identifier:
         return "https://doi.org/" + identifier
+    if preprint := arxiv_id(target):
+        # OpenAlex indexes arXiv preprints by their DataCite DOI, not an arXiv ID.
+        return "https://doi.org/" + ARXIV_DOI_PREFIX + re.sub(r"v\d+$", "", preprint)
     target = target.removeprefix("openalex:")
     if target.startswith("https://openalex.org/"):
         target = target.rsplit("/", 1)[-1]
@@ -237,7 +247,14 @@ class OpenAlexProvider(Provider):
             if not work:
                 search = await self.search(str(value), {"limit": 1}, ctx)
                 return bibliographic(req, search.hits[0] if search.hits else None, self.name)
-            return bibliographic(req, normalize(work), self.name)
+            hit = normalize(work)
+            result = bibliographic(req, hit, self.name)
+            if req.get("claim") and hit.snippet:
+                # The identified work's own abstract, verbatim and unjudged; never
+                # attached for a search-matched (unestablished) record.
+                result.claim_evidence = [{"provider": self.name, "source_id": hit.id, "scope": "cited_work_abstract",
+                                          "passage": hit.snippet, "supports_claim": "unknown"}]
+            return result
         ids = input_ids(req)
         if cap == Capability.PAPER_METADATA:
             if req.get("citation") and not req.get("ids"):

@@ -82,7 +82,10 @@ may still answer from their own caches.
 **Filters.** `search` supports `domains` (Exa, Tavily, Nimble, Firecrawl) and `recency`
 (Nimble, Firecrawl), the filters OmniRoute actually forwards. Sources that cannot apply a
 requested filter are skipped and listed in `coverage` (never returned unfiltered); if no routed
-source can apply it the call fails with `INVALID_INPUT`. Absolute date ranges are not offered.
+source can apply it the call fails with `INVALID_INPUT`. With `recency`, the server also checks
+source-reported publication dates: known out-of-window results are removed and each kept item is
+labelled `verified`, `unverified` or `conflicting` (`status=partial` unless all are verified).
+Absolute date ranges are not offered.
 Invalid operation/argument combinations also fail before any upstream request.
 
 ## Retrieval semantics

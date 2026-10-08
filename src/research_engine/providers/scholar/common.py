@@ -130,6 +130,7 @@ def bibliographic(req: dict[str, Any], hit: Hit | None, provider: str) -> Result
     citation = req.get("citation") or req.get("target") or ""
     matched: list[str] = []
     mismatch: list[str] = []
+    identifier_only = False
     if isinstance(citation, dict):
         for field in ("title", "year", "doi"):
             if citation.get(field) is None:
@@ -146,13 +147,23 @@ def bibliographic(req: dict[str, Any], hit: Hit | None, provider: str) -> Result
         expected_arxiv = arxiv_id(text)
         identifier_only = text.lower() in {identifier or "", "doi:" + (identifier or ""),
             "https://doi.org/" + (identifier or ""), "http://doi.org/" + (identifier or "")}
-        if identifier_only and hit.ids.get("doi") == identifier:
+        if identifier and hit.ids.get("doi") == identifier:
             matched.append("doi")
         elif expected_arxiv and hit.ids.get("arxiv") == expected_arxiv:
             matched.append("arxiv")
         if hit.title and normal_text(hit.title) in normal_text(text):
             matched.append("title")
-    verdict = "mismatch" if mismatch else "match" if matched else "unknown"
+        # Only a single unambiguous year token outside the identifiers is compared;
+        # authors, titles and venues are never guessed from free text.
+        rest = ARXIV_RE.sub(" ", DOI_RE.sub(" ", unquote(text))) if identifier or expected_arxiv else text
+        years = set(re.findall(r"(?<!\d)(?:1[89]|20)\d{2}(?!\d)", rest))
+        if hit.year and len(years) == 1:
+            (matched if str(hit.year) in years else mismatch).append("year")
+    # A DOI inside longer text identifies the record but cannot by itself (or with
+    # a year) validate the surrounding citation text.
+    supported = bool(matched) if isinstance(citation, dict) else bool(
+        {"title", "arxiv"} & set(matched) or (identifier_only and "doi" in matched))
+    verdict = "mismatch" if mismatch else "match" if supported else "unknown"
     return Result(verification={"bibliographic": verdict, "sources": [{"provider": provider,
         "id": hit.id, "ids": hit.ids, "title": hit.title, "year": hit.year,
         "matched_fields": matched, "mismatched_fields": mismatch}]})

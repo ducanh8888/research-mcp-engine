@@ -170,6 +170,8 @@ def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, 
         claim = request.pop("claim", None)
         if claim and name == "semantic_scholar":
             request["statement"] = claim
+        elif claim and name == "openalex":
+            request["claim"] = claim
     if cap == Capability.PAPER_SEARCH:
         start, end = request.pop("year_from", None), request.pop("year_to", None)
         request.pop("filters", None)

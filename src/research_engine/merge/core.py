@@ -207,6 +207,7 @@ def merge_hits(
         item["handle"] = handle
         item["fields"] = fields
         providers = []
+        seen: set[str] = set()
         best_ranks: dict[str, int] = {}
         for source in sources:
             provider = source["provider"]
@@ -217,12 +218,22 @@ def merge_hits(
             }
             if source["source_ids"] and source["source_ids"] != source["ids"]:
                 provenance["source_ids"] = source["source_ids"]
+            if isinstance(source.get("published"), str) and source["published"]:
+                provenance["published"] = source["published"]
             raw = source.get("raw") or {}
             if raw.get("transport") == "omniroute":
                 provenance["transport"] = "omniroute"
             for key in ("related_seed", "related_mode"):
                 if key in raw:
                     provenance[key] = raw[key]
+            # Sources are rank-ordered, so a repeated identical sighting from the
+            # same provider/account adds nothing; the first one is its best rank.
+            sighting = json.dumps({**{key: value for key, value in provenance.items() if key != "rank"},
+                                   "url": url_handle(provenance["url"]) or provenance["url"]},
+                                  sort_keys=True, default=str)
+            if sighting in seen:
+                continue
+            seen.add(sighting)
             if options.get("include_raw") and raw:
                 provenance["raw"] = raw
             providers.append(provenance)
