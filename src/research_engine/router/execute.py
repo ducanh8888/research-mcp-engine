@@ -38,6 +38,7 @@ from research_engine.storage.db import (
 
 
 NOT_NEEDED = "not needed after a usable source"
+UNSUPPORTED_FILTER = "unsupported filter"
 
 
 class ToolError(Exception):
@@ -248,7 +249,9 @@ class Engine:
         try:
             adapter_args = for_provider(cap, args, name)
         except InvalidRequest as error:
-            return Outcome(name, reason=f"unsupported_filter: {error}")
+            # Not attempted: this provider cannot honor the requested filter, and
+            # an unfiltered list must never be presented as filtered evidence.
+            return Outcome(name, reason=f"{UNSUPPORTED_FILTER}: {error}", skipped=True)
         tried: set[int] = set()
         last_reason = "no usable account"
         while True:
@@ -551,6 +554,9 @@ class Engine:
             if cached:
                 return {**cached, "request_id": request_id}
         mode, names = await asyncio.to_thread(self._route, cap)
+        if not names:
+            raise ToolError("NO_PROVIDER_AVAILABLE", f"No provider is configured for {cap.value}; "
+                            "an administrator must add one to its route")
         # Leave a small budget for partial aggregation, persistence and the
         # response envelope before the whole-request guard expires.
         provider_deadline = deadline - 0.5
@@ -603,6 +609,10 @@ class Engine:
         succeeded = [o for o in outcomes if o.result is not None or o.upstream_ref]
         pending = any(o.pending for o in outcomes)
         if not succeeded:
+            if outcomes and all((o.reason or "").startswith(UNSUPPORTED_FILTER) for o in outcomes):
+                filters = sorted({o.reason.split(": ", 1)[-1] for o in outcomes})
+                raise ToolError("INVALID_INPUT", "No configured provider supports the requested "
+                                + ", ".join(filters), coverage=coverage)
             raise ToolError("NO_PROVIDER_AVAILABLE", "No provider completed this capability", coverage=coverage)
         if cap in ASYNC_CAPABILITIES:
             if not succeeded or self.jobs is None:
