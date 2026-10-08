@@ -70,3 +70,57 @@ def test_env_import_creates_one_account_per_comma_separated_key(tmp_path, monkey
         assert store.get(consensus[0][0])["api_key"] == "fixture-key-three"
     finally:
         db.close()
+
+
+def test_env_import_lifecycle_preserves_state_and_manual_accounts(tmp_path, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from research_engine.cli import KEYS, _database, import_environment
+    from research_engine.storage.db import Account
+    from test_mcp_e2e import make_settings
+
+    for variable in [*KEYS, "OMNI_ROUTE_API_URL"]:
+        monkeypatch.delenv(variable, raising=False)
+    settings = make_settings(tmp_path / "runtime", 8765)
+    db, registry = _database(settings)
+
+    def state():
+        with db.session() as session:
+            return {a.label: (a.enabled, a.cooldown_until is not None) for a in session.scalars(
+                select(Account).where(Account.provider == "consensus_api"))}
+
+    try:
+        with db.session() as session:
+            session.add(Account(provider="consensus_api", label="environment-manual", credential="ok", enabled=True))
+            session.add(Account(provider="consensus_api", label="team", credential="ok", enabled=False))
+        monkeypatch.setenv("CONSENSUS_API_KEY", "key-one,key-two")
+        import_environment(settings, db, registry)
+        with db.session() as session:
+            second = session.scalar(select(Account).where(Account.label == "environment-2"))
+            second.cooldown_until = datetime.now(UTC) + timedelta(hours=1)
+        # Removing every key is a no-op: an absent variable never disables accounts.
+        monkeypatch.delenv("CONSENSUS_API_KEY")
+        import_environment(settings, db, registry)
+        assert state()["environment-2"] == (True, True)
+        monkeypatch.setenv("CONSENSUS_API_KEY", "key-one")
+        import_environment(settings, db, registry)
+        assert state()["environment-2"] == (False, True)
+        # Reintroducing the key restores usability but keeps its availability evidence.
+        monkeypatch.setenv("CONSENSUS_API_KEY", "key-one,key-two")
+        import_environment(settings, db, registry)
+        assert state() == {"environment": (True, False), "environment-2": (True, True),
+                           "environment-manual": (True, False), "team": (False, False)}
+    finally:
+        db.close()
+
+
+def test_multiple_env_accounts_remain_one_evidence_vote():
+    from research_engine.merge.core import merge_hits
+    from research_engine.server.schemas import Hit
+
+    hits = [Hit(provider="consensus_api", account=account, rank=1, title="Same paper", url="https://doi.org/10.1234/x",
+                ids={"doi": "10.1234/x"}) for account in (1, 2)]
+    item = merge_hits(hits).items[0]
+    assert item["score"] == 1 / 61  # accounts of one provider never add RRF votes

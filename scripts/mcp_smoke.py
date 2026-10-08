@@ -67,7 +67,7 @@ def main() -> int:
     parser.add_argument("--url", default="http://127.0.0.1:8765/mcp")
     parser.add_argument("--token-file", type=Path)
     parser.add_argument("--timeout", type=float, default=45)
-    parser.add_argument("--expect", action="append", default=["web_search", "web_read"])
+    parser.add_argument("--expect", action="append", default=["search", "read", "paper_search", "get_job"])
     parser.add_argument("--tool", help="Optionally call one tool after discovery")
     parser.add_argument("--arguments", default="{}", help="JSON arguments for --tool")
     args = parser.parse_args()

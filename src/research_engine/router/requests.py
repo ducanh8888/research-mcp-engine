@@ -23,6 +23,16 @@ YEAR_FILTERS = {
 }
 
 
+# OmniRoute forwards these filters only to the providers below (installed handler
+# source at fc5e2bc, re-checked live); it silently ignores them for every other
+# provider, so the engine skips those providers instead of claiming filtered results.
+OMNI_DOMAIN_FILTERS = frozenset({"omni:exa-search", "omni:tavily-search", "omni:nimble-search", "omni:firecrawl"})
+OMNI_RECENCY_FILTERS = frozenset({"omni:nimble-search", "omni:firecrawl"})
+DEVELOPER_KINDS = frozenset({"docs", "issues", "pull_request", "readme"})
+# GitHub developer search returns issues; only Firecrawl's developer index honors a kind.
+DEVELOPER_KIND_PROVIDERS = {"firecrawl"}
+
+
 class InvalidRequest(ValueError):
     pass
 
@@ -77,7 +87,8 @@ def validate(cap: Capability, args: dict[str, Any]) -> dict[str, Any]:
         raise InvalidRequest("mode must be similar, citing or cited")
     if cap == Capability.REPO_SEARCH and args.get("mode", "repos") not in {"repos", "code", "issues"}:
         raise InvalidRequest("mode must be repos, code or issues")
-    if cap == Capability.NEWS_SEARCH and args.get("recency") not in {None, "day", "week", "month", "year"}:
+    if cap in {Capability.WEB_SEARCH, Capability.NEWS_SEARCH} and args.get("recency") not in {
+            None, "day", "week", "month", "year"}:
         raise InvalidRequest("recency must be day, week, month or year")
     if cap in {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}:
         _strings(args.get("domains"), "domains")
@@ -96,6 +107,8 @@ def validate(cap: Capability, args: dict[str, Any]) -> dict[str, Any]:
             raise InvalidRequest("Graph depth is limited to 1 or 2")
     if cap == Capability.DEVELOPER_SEARCH:
         _strings(args.get("repos"), "repos")
+        if args.get("kind") is not None and args["kind"] not in DEVELOPER_KINDS:
+            raise InvalidRequest("kind must be docs, issues, pull_request or readme")
     if cap == Capability.REPO_SEARCH and args.get("min_stars") is not None:
         stars = args["min_stars"]
         if isinstance(stars, bool) or not isinstance(stars, int) or stars < 0:
@@ -120,8 +133,8 @@ def validate(cap: Capability, args: dict[str, Any]) -> dict[str, Any]:
 def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, Any]:
     """Return adapter input or an explicit unsupported-filter failure."""
     request = {k: v for k, v in args.items() if v is not None and k not in {"cursor", "deadline_s"}}
-    if not name.startswith("omni:"):
-        request.pop("fresh", None)
+    # ``fresh`` only bypasses the engine cache; no adapter receives it.
+    request.pop("fresh", None)
     if cap in {Capability.WEB_READ, Capability.PAPER_READ} and not name.startswith("omni:"):
         request["url"] = request.get("target")
     if cap == Capability.SITE_CRAWL:
@@ -130,19 +143,23 @@ def for_provider(cap: Capability, args: dict[str, Any], name: str) -> dict[str, 
         domains = request.pop("domains", None)
         start, end = request.pop("date_from", None), request.pop("date_to", None)
         recency = request.pop("recency", None)
+        bridged = name.startswith("omni:")
         if domains:
-            if name not in {"tavily", "exa", "firecrawl", "brave", "serper", "duckduckgo"}:
-                raise InvalidRequest("Provider does not support domain filters")
-            request["include_domains"] = domains
+            if name not in (OMNI_DOMAIN_FILTERS if bridged else
+                            {"tavily", "exa", "firecrawl", "brave", "serper", "duckduckgo"}):
+                raise InvalidRequest("domain filter")
+            request["domains" if bridged else "include_domains"] = domains
         if start or end:
-            if name not in {"tavily", "exa"}:
-                raise InvalidRequest("Provider does not support publication-date filters")
+            if bridged or name not in {"tavily", "exa"}:
+                raise InvalidRequest("publication-date filter")
             request.update({**({"published_after": start} if start else {}),
                             **({"published_before": end} if end else {})})
         if recency:
-            if name not in {"tavily", "brave", "serper", "firecrawl"}:
-                raise InvalidRequest("Provider does not support recency filters")
-            request["freshness"] = recency
+            if name not in (OMNI_RECENCY_FILTERS if bridged else {"tavily", "brave", "serper", "firecrawl"}):
+                raise InvalidRequest("recency filter")
+            request["recency" if bridged else "freshness"] = recency
+    if cap == Capability.DEVELOPER_SEARCH and request.get("kind") and name not in DEVELOPER_KIND_PROVIDERS:
+        raise InvalidRequest("developer source kind")
     if cap == Capability.DEVELOPER_SEARCH and request.get("repos") and name not in {"github", "firecrawl"}:
         raise InvalidRequest("Provider does not support repository filters")
     if cap == Capability.REPO_SEARCH and request.get("min_stars") is not None and name not in {"github", "firecrawl"}:

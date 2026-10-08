@@ -105,13 +105,13 @@ def _provider(actual: Any, expected: str) -> None:
 
 
 def _strict_request(req: dict[str, Any], allowed: set[str], *, operation: str) -> None:
-    # The gateway accepts filters that some handlers simply ignore. Rejecting
-    # unused public arguments avoids claiming a filtered search or a fresh read.
+    # The gateway silently ignores filters some handlers cannot apply. The router
+    # only passes filters verified for this provider; anything else is rejected
+    # here rather than claiming a filtered search. ``fresh`` is an engine-cache
+    # flag and is never forwarded upstream.
     unsupported = sorted(key for key, value in req.items() if key not in allowed and value not in (None, [], {}))
     if unsupported:
         raise _bad(f"OmniRoute {operation} does not support: {', '.join(unsupported)}")
-    if req.get("fresh"):
-        raise _bad("OmniRoute cannot guarantee upstream cache bypass for fresh requests")
 
 
 class OmniRouteBridge:
@@ -141,7 +141,7 @@ class OmniRouteBridge:
     async def search(self, provider_id: str, cap: Capability, req: dict[str, Any], ctx: CallContext) -> Result:
         if cap not in {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}:
             raise _bad("OmniRoute search does not implement this capability")
-        _strict_request(req, {"query", "limit", "fresh", "deadline_s"}, operation="search")
+        _strict_request(req, {"query", "limit", "deadline_s", "domains", "recency"}, operation="search")
         query = req.get("query")
         if not isinstance(query, str) or not query.strip():
             raise _bad("Search query must be nonempty")
@@ -151,6 +151,15 @@ class OmniRouteBridge:
         body: dict[str, Any] = {"query": query.strip(), "provider": provider_id,
                                 "max_results": limit, "search_type": "news" if cap == Capability.NEWS_SEARCH else "web",
                                 "strict_filters": True}
+        domains = req.get("domains")
+        if domains:
+            if not isinstance(domains, list) or any(not isinstance(item, str) or not item.strip() for item in domains):
+                raise _bad("Domain filters must be nonempty strings")
+            body["filters"] = {"include_domains": [item.strip().lower() for item in domains]}
+        if req.get("recency"):
+            if req["recency"] not in {"day", "week", "month", "year"}:
+                raise _bad("Recency must be day, week, month or year")
+            body["time_range"] = req["recency"]
         data, _ = await self._post(ctx, "search", body)
         _provider(data.get("provider"), provider_id)
         if data.get("errors") not in (None, []):
@@ -184,7 +193,7 @@ class OmniRouteBridge:
         return Result(hits=hits[:limit], usage={"transport": "omniroute", "cached": data.get("cached") is True})
 
     async def fetch(self, provider_id: str, req: dict[str, Any], ctx: CallContext) -> Result:
-        _strict_request(req, {"target", "url", "fresh", "deadline_s"}, operation="fetch")
+        _strict_request(req, {"target", "url", "deadline_s"}, operation="fetch")
         target = req.get("target", req.get("url"))
         if not isinstance(target, str) or not target:
             raise _bad("Fetch requires a source URL")

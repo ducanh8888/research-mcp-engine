@@ -35,6 +35,7 @@ from research_engine.storage.db import (
     Routing,
     create_client_token,
 )
+from public_api import to_public
 from test_mcp_e2e import Runtime, make_settings, run_http_app
 
 
@@ -201,6 +202,7 @@ async def mcp_fixture(
 
 
 async def call(runtime: Runtime, tool: str, args: dict) -> tuple[dict, bool]:
+    tool, args = to_public(tool, args)
     async with runtime.client() as client:
         try:
             response = await client.call_tool(tool, args)
@@ -303,7 +305,12 @@ async def test_every_search_collects_all_peers_even_on_legacy_sequential_route(
     tmp_path: Path,
     capability: str,
     first_zero_hits: bool,
+    monkeypatch,
 ):
+    # Public code_search scope=docs asks for documentation; these fixtures stand in
+    # for developer-index sources that can honor that kind.
+    monkeypatch.setattr("research_engine.router.requests.DEVELOPER_KIND_PROVIDERS",
+                        {"firecrawl", "first", "second", "third"})
     cap = Capability(capability)
     first_started = threading.Event()
     second_started, third_started = threading.Event(), threading.Event()

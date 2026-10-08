@@ -113,6 +113,14 @@ def running_server(tmp_path: Path):
         yield runtime
 
 
+PUBLIC_TOOLS = {"search", "read", "paper_search", "paper_explore", "verify", "code_search",
+                "site_research", "deep_research", "get_job"}
+OLD_CAPABILITY_TOOLS = {"web_search", "news_search", "web_read", "paper_read", "paper_metadata",
+                        "paper_related", "citation_verify", "citation_graph", "editorial_check",
+                        "developer_search", "repo_search", "site_map", "site_crawl",
+                        "systematic_review", "deep_literature_search"}
+
+
 async def test_http_discovery_is_stable_without_provider_accounts(running_server: Runtime):
     async with httpx.AsyncClient() as http:
         health = await http.get(running_server.url + "/health")
@@ -121,45 +129,55 @@ async def test_http_discovery_is_stable_without_provider_accounts(running_server
         first = await client.list_tools()
         second = await client.list_tools()
     names = {tool.name for tool in first}
-    assert {"web_search", "web_read", "paper_search", "paper_metadata", "citation_verify"} <= names
+    assert names == PUBLIC_TOOLS and not names & OLD_CAPABILITY_TOOLS
     assert names == {tool.name for tool in second}
     for tool in first:
-        properties = tool.input_schema.get("properties", {})
-        assert "provider" not in properties
-        assert "account_id" not in properties
+        properties = set(tool.input_schema.get("properties", {}))
+        assert not properties & {"provider", "providers", "account", "account_id", "transport", "route", "mode"}
 
 
 async def test_http_discovery_describes_workflows_and_validated_choices(running_server: Runtime):
     async with running_server.client() as client:
+        instructions = (client.instructions or "").lower()
         tools = {tool.name: tool for tool in await client.list_tools()}
-    assert len(tools) == 17
+    assert set(tools) == PUBLIC_TOOLS
+    for phrase in ("search", "focus=news", "read", "paper_search", "paper_explore", "verify", "code_search",
+                   "site_research", "deep_research", "get_job", "not full text", "separate evidence pools",
+                   "partial", "coverage", "provenance", "next_cursor", "fresh=true"):
+        assert phrase in instructions, phrase
     for name, hints in {
-        "web_search": ("web", "web_read", "fresh", "deadline_s"),
-        "news_search": ("news", "recency"),
-        "web_read": ("cursor", "source"),
-        "paper_search": ("academic", "paper_read"),
-        "paper_metadata": ("citation", "unknown", "per_id_coverage"),
-        "paper_related": ("seeds", "similar", "citing", "cited"),
-        "citation_verify": ("citation", "claim", "tallies"),
-        "citation_graph": ("direction", "in", "out", "both"),
-        "repo_search": ("repos", "code", "issues"),
-        "get_job": ("job_id", "wait_s"),
+        "search": ("default", "news", "read", "domains", "recency", "skipped", "fresh"),
+        "read": ("handle", "doi", "fulltext", "abstract", "next_cursor", "cursor"),
+        "paper_search": ("academic", "identity", "read", "paper_explore"),
+        "paper_explore": ("metadata", "related", "citations", "per_seed_coverage", "unknown", "direction"),
+        "verify": ("citation", "claim", "editorial", "tallies", "never proof"),
+        "code_search": ("docs", "repositories", "code", "issues", "repos"),
+        "site_research": ("map", "crawl", "job_id", "get_job", "max_depth"),
+        "deep_research": ("literature", "systematic_review", "get_job", "never replaced"),
+        "get_job": ("job_id", "wait_s", "running"),
     }.items():
-        description = tools[name].description.lower()
-        assert all(hint in description for hint in hints), name
+        description = (tools[name].description or "").lower()
+        assert all(hint in description for hint in hints), (name, [h for h in hints if h not in description])
     for tool_name, field, values in (
-        ("news_search", "recency", {"day", "week", "month", "year"}),
-        ("paper_related", "mode", {"similar", "citing", "cited"}),
-        ("citation_graph", "direction", {"in", "out", "both"}),
-        ("repo_search", "mode", {"repos", "code", "issues"}),
+        ("search", "focus", {"web", "news"}),
+        ("search", "recency", {"day", "week", "month", "year"}),
+        ("read", "source_type", {"auto", "web", "paper"}),
+        ("paper_explore", "operation", {"metadata", "related", "citations"}),
+        ("paper_explore", "relation", {"similar", "citing", "cited"}),
+        ("paper_explore", "direction", {"in", "out", "both"}),
+        ("verify", "operation", {"citation", "claim", "editorial"}),
+        ("code_search", "scope", {"docs", "repositories", "code", "issues"}),
+        ("site_research", "operation", {"map", "crawl"}),
+        ("deep_research", "operation", {"literature", "systematic_review"}),
     ):
         schema = tools[tool_name].input_schema["properties"][field]
         choices = schema.get("enum") or next((part["enum"] for part in schema.get("anyOf", [])
                                                if "enum" in part), [])
-        assert set(choices) == values
-    for tool in tools.values():
-        assert "provider" not in tool.input_schema.get("properties", {})
-        assert "account_id" not in tool.input_schema.get("properties", {})
+        assert set(choices) == values, (tool_name, field)
+    assert set(tools["paper_explore"].input_schema["required"]) == {"operation"}
+    assert set(tools["verify"].input_schema["required"]) == {"operation"}
+    assert tools["search"].annotations.readOnlyHint is True
+    assert tools["site_research"].annotations.readOnlyHint is False
 
 
 class SyntheticSearch(Provider):
@@ -245,7 +263,7 @@ async def test_http_failover_partial_coverage_and_handle_after_restart(tmp_path:
     runtime = Runtime(f"http://127.0.0.1:{settings.port}", token, token_id, settings, app)
     with run_http_app(app, sock):
         async with runtime.client() as client:
-            search = json.loads((await client.call_tool("web_search", {"query": "fixture", "limit": 5})).content[0].text)
+            search = json.loads((await client.call_tool("search", {"query": "fixture", "limit": 5})).content[0].text)
             # A rate-limited peer reduces evidence coverage even when another provider succeeds.
             assert search["status"] == "partial"
             assert len(search["items"]) == 1
@@ -255,7 +273,7 @@ async def test_http_failover_partial_coverage_and_handle_after_restart(tmp_path:
             handle = item["handle"]
             assert handle
             assert item["url"] == "https://example.org/article?id=1"
-            read = json.loads((await client.call_tool("web_read", {"target": handle, "fresh": True})).content[0].text)
+            read = json.loads((await client.call_tool("read", {"target": handle, "fresh": True})).content[0].text)
             assert read["document"]["text"] == "Persisted fixture document evidence."
             assert history[0] == FailedRead.name
             assert history[-1] == SyntheticRead.name
@@ -273,6 +291,6 @@ async def test_http_failover_partial_coverage_and_handle_after_restart(tmp_path:
     runtime = Runtime(restart_url, token, token_id, settings, restarted)
     with run_http_app(restarted, restart_sock):
         async with runtime.client() as client:
-            read = json.loads((await client.call_tool("web_read", {"target": handle})).content[0].text)
+            read = json.loads((await client.call_tool("read", {"target": handle})).content[0].text)
         assert read["document"]["text"] == "Persisted fixture document evidence."
         assert read["document"]["handle"] == handle

@@ -103,14 +103,46 @@ async def test_search_rejects_provider_substitution_partial_or_invalid_hits(payl
 
 
 @pytest.mark.parametrize("unsupported", [
-    {"domains": ["example.org"]}, {"date_from": "2026-10-01"}, {"recency": "day"},
-    {"provider_options": {"provider": "serper-search"}}, {"fresh": True},
+    {"date_from": "2026-10-01"}, {"provider_options": {"provider": "serper-search"}}, {"fresh": True},
 ])
-async def test_unsupported_filters_or_fresh_are_rejected_without_network(unsupported):
+async def test_unsupported_options_are_rejected_without_network(unsupported):
+    # The router never forwards ``fresh``; a direct adapter caller still cannot smuggle options upstream.
     async with client_for(lambda request: pytest.fail("No upstream request expected")) as client:
         with pytest.raises(BridgeError) as caught:
             await PROVIDERS[1].call(Capability.WEB_SEARCH, {"query": "source", **unsupported}, Context(client))
     assert caught.value.kind == ErrorKind.BAD_REQUEST and not caught.value.block_capability
+
+
+async def test_verified_filters_use_omniroute_request_shape():
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={**SEARCH, "provider": "brave-search", "results": []})
+
+    async with client_for(handler) as client:
+        await PROVIDERS[1].call(Capability.NEWS_SEARCH, {"query": "source", "domains": [" Example.org "],
+                                                         "recency": "week"}, Context(client))
+    assert sent[0]["filters"] == {"include_domains": ["example.org"]}
+    assert sent[0]["time_range"] == "week" and sent[0]["search_type"] == "news"
+    assert "fresh" not in sent[0]
+
+
+def test_router_forwards_filters_only_to_verified_bridge_providers():
+    from research_engine.router.requests import InvalidRequest, for_provider
+
+    args = {"query": "q", "domains": ["example.org"], "fresh": True, "deadline_s": 40}
+    assert for_provider(Capability.WEB_SEARCH, args, "omni:exa-search") == {"query": "q", "domains": ["example.org"]}
+    for name in ("omni:serper-search", "omni:ollama-search", "omni:duckduckgo-free"):
+        with pytest.raises(InvalidRequest):
+            for_provider(Capability.WEB_SEARCH, args, name)
+    recency = {"query": "q", "recency": "day"}
+    assert for_provider(Capability.NEWS_SEARCH, recency, "omni:nimble-search")["recency"] == "day"
+    with pytest.raises(InvalidRequest):
+        for_provider(Capability.NEWS_SEARCH, recency, "omni:tavily-search")
+    with pytest.raises(InvalidRequest):
+        for_provider(Capability.WEB_SEARCH, {"query": "q", "date_from": "2026-01-01"}, "omni:exa-search")
+    assert "fresh" not in for_provider(Capability.WEB_READ, {"target": "https://e.org", "fresh": True}, "omni:jina-reader")
 
 
 async def test_reader_flat_response_source_text_and_provenance():

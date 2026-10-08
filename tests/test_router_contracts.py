@@ -435,22 +435,24 @@ async def test_public_tool_crawl_depth_and_year_filters_and_claim(tmp_path):
             runtime = Runtime(f"http://127.0.0.1:{settings.port}", token, token_id, settings, app)
             with run_http_app(app, sock):
                 async with runtime.client() as client:
-                    crawl = await client.call_tool("site_crawl", {"url": "https://example.org", "max_depth": 5})
+                    crawl = await client.call_tool("site_research", {"operation": "crawl", "url": "https://example.org", "max_depth": 5})
                     assert not crawl.is_error, crawl.content
                     assert next(body for path, _, body in sent if path.endswith("/crawl"))["maxDiscoveryDepth"] == 5
                     year = await client.call_tool("paper_search", {"query": "test", "year_from": 2000,
                                                                      "year_to": 2020, "fresh": True})
                     assert not year.is_error, year.content
                     assert next(params for path, params, _ in sent if path.endswith("/paper/search"))["year"] == "2000-2020"
-                    verification = await client.call_tool("citation_verify", {"citation": "DOI:10.1234/a",
-                                                                                 "claim": "a statement", "fresh": True})
+                    verification = await client.call_tool("verify", {"operation": "claim", "citation": "DOI:10.1234/a",
+                                                                 "claim": "a statement", "fresh": True})
                     assert not verification.is_error, verification.content
                     assert json.loads(verification.content[0].text)["claim_evidence"][0]["passage"] == "Source claim context"
                     before = len(sent)
-                    for tool, args in [("site_crawl", {"url": ""}),
-                                       ("site_crawl", {"url": "https://example.org", "max_depth": 99}),
+                    for tool, args in [("site_research", {"operation": "crawl", "url": ""}),
+                                       ("site_research", {"operation": "crawl", "url": "https://example.org",
+                                                          "max_depth": 99}),
                                        ("paper_search", {"query": "test", "year_from": 2020, "year_to": 2000}),
-                                       ("citation_graph", {"seeds": ["id"], "direction": "sideways"})]:
+                                       ("paper_explore", {"operation": "citations", "ids": ["id"],
+                                                          "direction": "sideways"})]:
                         invalid = await client.call_tool(tool, args, raise_on_error=False)
                         assert invalid.is_error
                         assert len(sent) == before

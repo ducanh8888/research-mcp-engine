@@ -18,6 +18,7 @@ A provider is registered in code; a route determines whether it is selected for 
 | Elicit API | Paper search, systematic-review/deep-search jobs | Direct; review job seeded, search/deep-search have adapters but no seeded routes. Requires eligible API access. |
 | Scite and Elicit hosted MCP | Paper search | Direct, registered but not seeded; require account OAuth and compatible upstream tool schema. |
 | GitHub REST | Developer/repository search and supported URL reads | Direct, seeded. Public requests or optional token; code search may require auth/plan. |
+| Firecrawl developer index | Developer search with `kind` (documentation for `code_search scope=docs`) | Direct, seeded beside GitHub for new installs; Firecrawl key required. An existing deployment adds `firecrawl` to its `developer_search` route in `/admin`. |
 | Firecrawl direct | Site map and persistent crawl job | Direct, seeded; Firecrawl key required. Search/fetch routes use OmniRoute instead. |
 
 Registered direct Exa, Tavily, Brave, Serper, Jina, Firecrawl search/fetch and DuckDuckGo adapters are retained for compatibility and non-commodity gaps. Covered direct search/fetch operations are **not** a backup route when OmniRoute is unavailable. Undermind is not registered. Source registration does not establish a working live account or an independently validated provider operation.

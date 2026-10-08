@@ -60,7 +60,7 @@ The active ignored `config.yaml` must use `public_base_url: https://research.duc
 
 The repository does not configure or operate the existing TLS tunnel, DNS, or firewall. Preserve the existing password hash, keys, accounts, routes, and data while updating the ignored runtime origins. The upstream Account → Connect OAuth callback is exactly `https://research.ducanh.cloud/admin/oauth/callback`; register that redirect URI with the provider and start Connect from an authenticated admin session. Session cookies are Secure when the configured public base URL is HTTPS. An external provider's OAuth consent screen may require account-owner action. OAuth for an upstream account does not replace the MCP client's Bearer token authentication.
 
-Do not enable proxy-header trust or add a new auth proxy without a reproduced tunnel failure. Check the real public Host/Origin, redirects, cookies, and callback. The server performs MCP Host and optional Origin validation. Use a dedicated client token for remote MCP clients; do not place the bootstrap JSON on another machine. The MCP server instructions and 17 tool descriptions explain task selection, search → read, source coverage and asynchronous `get_job` polling without a separate agent prompt.
+Do not enable proxy-header trust or add a new auth proxy without a reproduced tunnel failure. Check the real public Host/Origin, redirects, cookies, and callback. The server performs MCP Host and optional Origin validation. Use a dedicated client token for remote MCP clients; do not place the bootstrap JSON on another machine. The MCP server instructions and nine workflow tool descriptions explain task selection, search → read, source coverage, filters, pagination and asynchronous `get_job` polling without a separate agent prompt.
 
 ## Backup and upgrades
 
@@ -70,7 +70,28 @@ Keep SQLite, WAL, blobs, `config.yaml`, encryption key, and session secret toget
 
 ### Fixtures
 
-The frozen fixture suite passes **417 tests**; Ruff and `uv lock --check` pass, and CI is green on `main`. The public MCP C17 matrix covers multi-seed similar/citing/cited, DOI and conservative plain/ambiguous citation outcomes, and partial provider failure. Synthetic C27 checks keep fake API keys, bearer/refresh tokens, OAuth codes and sensitive URL parameters out of provider errors, Account Test, request/attempt rows, job errors, MCP responses, admin pages and OAuth error paths. OAuth fixtures cover session-bound, single-use and expiring state using the coordinator timeout.
+The frozen fixture suite passes **451 tests**; Ruff and `uv lock --check` pass. The public MCP C17 matrix covers multi-seed similar/citing/cited, DOI and conservative plain/ambiguous citation outcomes, and partial provider failure. Synthetic C27 checks keep fake API keys, bearer/refresh tokens, OAuth codes and sensitive URL parameters out of provider errors, Account Test, request/attempt rows, job errors, MCP responses, admin pages and OAuth error paths. OAuth fixtures cover session-bound, single-use and expiring state using the coordinator timeout.
+
+### Nine-tool interface record (2026-10-08, branch `public-workflow-tools`)
+
+Observed through `https://research.ducanh.cloud/mcp` after deploying the workflow interface:
+
+| Check | Observed |
+|---|---|
+| Discovery | Exactly 9 tools (`search`, `read`, `paper_search`, `paper_explore`, `verify`, `code_search`, `site_research`, `deep_research`, `get_job`); missing Bearer → 401 |
+| `search` web | `complete`, 7/7 providers; with `fresh=true` also `complete`, 7/7 (previously every provider failed with BAD_REQUEST) |
+| `search` news | `complete`, 4/4 providers |
+| `search` `domains=github.com` | Exa, Tavily, Nimble, Firecrawl returned only github.com (and docs.github.com); Serper, Ollama, DuckDuckGo skipped as `unsupported filter`; `partial` |
+| `search` news `recency=week` | Firecrawl returned results; Nimble upstream 504; Serper/Tavily skipped as `unsupported filter`; `partial` |
+| `read` | Web page via Jina Reader, with and without `fresh=true`; a DOI under `source_type=auto` read as a paper (OpenAlex full text) |
+| `paper_search` | 4 scholarly sources; Semantic Scholar rate-limited (429) → `partial` |
+| `paper_explore` / `verify` | metadata resolved; citing papers returned; citation `match`; editorial checks from 3 sources |
+| `code_search` | repositories via GitHub; docs via Firecrawl's developer index (GitHub/Exa skipped for the docs kind) |
+| `site_research` / `deep_research` | map returned URLs; literature returns `NO_PROVIDER_AVAILABLE` (no route configured), never an ordinary search |
+| Restart | After `docker compose restart`: token, cache and a persisted search handle read still work |
+| Real client | Claude Code 2.1.287 (`claude -p`, only `search`/`read`/`paper_search` allowed, no tool or provider hints) connected, discovered 9 tools, used `search` → `read` for a general question and `paper_search` for an academic one |
+
+ChatGPT connectors must be refreshed to rediscover the new tool names; that was not performed here.
 
 ### Live deployment record (2026-10-08, commit `aeba3a3`)
 

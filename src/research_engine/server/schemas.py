@@ -122,3 +122,37 @@ class JobOutput(BaseModel):
 
 ProviderHit = Hit
 ProviderResult = Result
+
+
+# Workflow tools that dispatch to several capabilities share one output schema;
+# fields of the operation that did not run are absent.
+class ExploreOutput(Envelope):
+    records: list[dict[str, Any]] | None = None
+    not_found: list[str] | None = None
+    per_id_coverage: dict[str, Any] | None = None
+    items: list[dict[str, Any]] | None = None
+    per_seed_coverage: dict[str, list[dict[str, Any]]] | None = None
+    nodes: list[dict[str, Any]] | None = None
+    edges: list[dict[str, Any]] | None = None
+    truncated: bool | None = None
+
+
+class VerifyWorkflowOutput(Envelope):
+    bibliographic: Literal["match", "mismatch", "conflict", "unknown"] | None = None
+    sources: list[dict[str, Any]] | None = None
+    claim_evidence: list[dict[str, Any]] | None = None
+    citation_tallies: list[dict[str, Any]] | None = None
+    checks: list[dict[str, Any]] | None = None
+
+
+class SiteOutput(BaseModel):
+    """A site map envelope, or the job envelope of a started crawl."""
+
+    status: str
+    request_id: str | None = None
+    coverage: Coverage | None = None
+    urls: list[str] | None = None
+    job_id: str | None = None
+    poll_after_s: float | None = None
+    result: dict[str, Any] | None = None
+    last_error: str | None = None

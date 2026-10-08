@@ -38,7 +38,8 @@ ORDER = {
     "editorial_check": ["crossref", "openalex", "semantic_scholar", "scite_rest"],
     "deep_literature_search": ["undermind", "elicit_mcp"],
     "systematic_review": ["elicit_api", "elicit_mcp"],
-    "developer_search": ["github"], "repo_search": ["github"],
+    # Firecrawl's developer index (docs/readmes) is a specialist gap OmniRoute does not cover.
+    "developer_search": ["github", "firecrawl"], "repo_search": ["github"],
 }
 
 

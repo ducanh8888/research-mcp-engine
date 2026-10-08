@@ -6,6 +6,7 @@ import argparse
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import socket
@@ -64,8 +65,11 @@ def import_environment(settings, db: Database, registry: dict) -> list[str]:
 
     Each key becomes one account of the same provider, so account selection
     (priority, round-robin, quota-aware) and auth/rate/quota failover apply.
-    Accounts never become separate evidence votes. An ``environment-N`` account
-    whose key was removed from the list is disabled rather than deleted.
+    Accounts never become separate evidence votes. When a variable is set, it is
+    authoritative for that provider's ``environment*`` accounts: listed keys are
+    enabled, and ``environment-N`` accounts beyond the list are disabled (never
+    deleted). An empty or absent variable changes nothing. Cooldowns, capability
+    blocks and quota observations are kept; manually created accounts are untouched.
     """
     values = {**dotenv_values(settings.encryption_key_file.parent.parent / ".env"), **os.environ}
     store = SecretStore(db, Cipher.from_file(settings.encryption_key_file, db))
@@ -85,13 +89,13 @@ def import_environment(settings, db: Database, registry: dict) -> list[str]:
                     session.flush()
                 if account.credential != "disabled":
                     account.credential = "ok"
+                account.enabled = True
                 account_id = account.id
             store.set(account_id, {"api_key": key})
             imported.append(provider)
         with db.session() as session:
-            for account in session.scalars(select(Account).where(
-                    Account.provider == provider, Account.label.like("environment-%"))):
-                if account.label not in labels:
+            for account in session.scalars(select(Account).where(Account.provider == provider)):
+                if re.fullmatch(r"environment-\d+", account.label) and account.label not in labels:
                     account.enabled = False
     bridge_url = values.get("OMNI_ROUTE_API_URL")
     if isinstance(bridge_url, str) and bridge_url.strip() and "omniroute" in registry:
