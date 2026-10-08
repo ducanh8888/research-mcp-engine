@@ -174,3 +174,29 @@ async def test_oauth_callback_is_sdk_v2_result_and_exactly_once():
     assert received == [AuthorizationCodeResult(code="fixture-code", state="fixture-state",
                                                 iss="https://auth.example.org")]
     await coordinator.close()
+
+
+async def test_restarted_connect_replaces_stale_flow_and_rejects_old_state():
+    coordinator = OAuthFlowCoordinator(timeout=5)
+
+    def connector_for(state):
+        async def connector():
+            redirect, callback = coordinator.handlers(7)
+            await redirect(f"https://auth.example.org/authorize?state={state}")
+            await callback()
+        return connector
+
+    first = await coordinator.begin(7, connector_for("first-state"))
+    assert first["state"] == "first-state"
+    # The owner abandoned the first consent page and pressed Connect again.
+    second = await coordinator.begin(7, connector_for("second-state"))
+    assert second["status"] == "authorization_pending" and second["state"] == "second-state"
+    with pytest.raises(OAuthStateError):
+        coordinator.callback("first-state", code="late-code")
+    assert coordinator.callback("second-state", code="fresh-code")["status"] == "exchanging_token"
+    await coordinator.close()
+
+
+def test_elicit_oauth_requests_refresh_scope():
+    from research_engine.providers.mcp.clients import HOSTED_SCOPES
+    assert HOSTED_SCOPES["elicit"] == ["elicit.mcp", "offline_access"]

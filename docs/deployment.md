@@ -70,7 +70,7 @@ Keep SQLite, WAL, blobs, `config.yaml`, encryption key, and session secret toget
 
 ### Fixtures
 
-The frozen fixture suite passes **414 tests**; Ruff and `uv lock --check` pass, and CI is green on `main`. The public MCP C17 matrix covers multi-seed similar/citing/cited, DOI and conservative plain/ambiguous citation outcomes, and partial provider failure. Synthetic C27 checks keep fake API keys, bearer/refresh tokens, OAuth codes and sensitive URL parameters out of provider errors, Account Test, request/attempt rows, job errors, MCP responses, admin pages and OAuth error paths. OAuth fixtures cover session-bound, single-use and expiring state using the coordinator timeout.
+The frozen fixture suite passes **416 tests**; Ruff and `uv lock --check` pass, and CI is green on `main`. The public MCP C17 matrix covers multi-seed similar/citing/cited, DOI and conservative plain/ambiguous citation outcomes, and partial provider failure. Synthetic C27 checks keep fake API keys, bearer/refresh tokens, OAuth codes and sensitive URL parameters out of provider errors, Account Test, request/attempt rows, job errors, MCP responses, admin pages and OAuth error paths. OAuth fixtures cover session-bound, single-use and expiring state using the coordinator timeout.
 
 ### Live deployment record (2026-10-08, commit `aeba3a3`)
 

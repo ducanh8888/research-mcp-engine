@@ -23,7 +23,7 @@ HOSTED_ENDPOINTS = {
 }
 HOSTED_SCOPES = {
     "scite": ["mcp"],
-    "elicit": ["elicit.mcp"],
+    "elicit": ["elicit.mcp", "offline_access"],
     "undermind": ["mcp"],
     "consensus": ["search", "profile"],
 }

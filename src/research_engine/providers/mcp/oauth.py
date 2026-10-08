@@ -200,8 +200,17 @@ class OAuthFlowCoordinator:
         return redirect, callback
 
     async def begin(self, account_id: int, connector: Callable[[], Awaitable[None]]) -> dict:
-        if account_id in self.pending:
-            raise OAuthStateError("An authorization flow is already active for this account")
+        previous = self.pending.get(account_id)
+        if previous is not None:
+            # An administrator restarting Connect abandons the earlier attempt; its
+            # state is removed so a late callback for it is rejected as unknown.
+            if previous.task is not None:
+                previous.task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await previous.task
+            if previous.state:
+                self.states.pop(previous.state, None)
+            self.pending.pop(account_id, None)
         flow = _PendingFlow(account_id)
         self.pending[account_id] = flow
         self.results[account_id] = {"account_id": account_id, "status": "connecting"}
