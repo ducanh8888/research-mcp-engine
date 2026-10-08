@@ -1,6 +1,6 @@
 # Architecture
 
-Research MCP is one FastAPI process hosting FastMCP Streamable HTTP (`/mcp`) and SQLAdmin (`/admin`). An MCP client sends a capability request with its Bearer token; the token authorizes the client and is never passed to an upstream provider. The admin dashboard uses a separate username/password session and CSRF protection. `/health` is the liveness endpoint.
+Research MCP is one FastAPI process hosting FastMCP Streamable HTTP (`/mcp`) and SQLAdmin (`/admin`). An MCP client calls one of nine workflow tools with its Bearer token; a thin dispatch layer maps it to one internal capability, and the token authorizes the client and is never passed to an upstream provider. The admin dashboard uses a separate username/password session and CSRF protection. `/health` is the liveness endpoint.
 
 ```text
 MCP client → auth → capability validation → saved route → provider calls

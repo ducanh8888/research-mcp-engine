@@ -31,9 +31,9 @@ Searches fan out; reading one URL, resolving unresolved metadata IDs, and starti
 
 ## Capabilities
 
-**Implemented:** 17 MCP tools for web/news, academic, citation/editorial, site, developer/repository, and job operations. Search results are pointers, not full text; use a read tool on a returned URL or handle. Search-like routes execute enabled, configured independent providers concurrently. Ordinary results include `status`, `coverage`, and source attribution. Reads are paginated, and asynchronous operations use persisted jobs where a provider is configured. An optional reranker is wired into search and disabled by default.
+**Implemented:** 9 workflow MCP tools over 16 internal capabilities for web/news, academic, citation/editorial, site, developer/repository and job operations. Search results are pointers, not full text; use `read` on a returned URL or handle. Search-like routes execute enabled, configured independent providers concurrently. Ordinary results include `status`, `coverage`, and source attribution. Reads are paginated, and asynchronous operations use persisted jobs where a provider is configured. An optional reranker is wired into search and disabled by default.
 
-**Conditional / experimental:** Hosted Scite and Elicit MCP search adapters validate known tool schemas but require eligible accounts and successful OAuth connection. `deep_literature_search` has an Elicit API adapter but no default seeded route; it requires an explicitly configured route and an eligible upstream account. Some direct commodity adapters remain registered for compatibility but are not seeded as fallback routes for covered OmniRoute operations. Local/OmniRoute reranking needs deployment-specific configuration and evaluation before enabling.
+**Conditional / experimental:** Hosted Scite and Elicit MCP search adapters validate known tool schemas but require eligible accounts and successful OAuth connection. `deep_research operation=literature` has an Elicit API adapter but no default seeded route; until one is configured it returns `NO_PROVIDER_AVAILABLE`. `code_search scope=docs` uses Firecrawl's developer index and needs a Firecrawl key. Some direct commodity adapters remain registered for compatibility but are not seeded as fallback routes for covered OmniRoute operations. Local/OmniRoute reranking needs deployment-specific configuration and evaluation before enabling.
 
 **Not provided:** automatic research planning, interpretation of evidence, a client-facing OAuth authorization server, or guaranteed access to paid providers. Undermind is not registered; unavailable hosted tools do not become usable merely because their MCP names appear upstream.
 
@@ -56,27 +56,34 @@ Other implemented bridge IDs and retained direct adapters are catalogued in [pro
 
 ## MCP tools
 
-| Tool | Purpose and important inputs |
-|---|---|
-| `web_search` | Web source pointers (`query`, optional `limit`, domain/date filters). |
-| `news_search` | News pointers (`query`, optional `recency` or date bounds). |
-| `web_read` | Read a URL or search handle (`target`, optional pagination `cursor`). |
-| `site_map` | List URLs from a site (`url`, `limit`); requires a suitable provider. |
-| `site_crawl` | Start a bounded site crawl (`url`, `limit`, `max_depth`); returns a job. |
-| `paper_search` | Search scholarly sources (`query`, optional year bounds). |
-| `paper_read` | Read available paper text or a labeled abstract (`target`, `cursor`). |
-| `paper_metadata` | Resolve DOI/other IDs or conservatively match a citation (`ids` or `citation`). |
-| `paper_related` | Similar, citing, or cited papers (`seeds`, `mode`, `limit`). |
-| `citation_verify` | Bibliographic assertions and separately attributable claim evidence (`citation`, optional `claim`). |
-| `citation_graph` | Citation nodes/edges (`seeds`, `direction`, `depth`); may be truncated. |
-| `editorial_check` | Source-attributed editorial/retraction notices (`ids`); missing data is unknown. |
-| `systematic_review` | Start an eligible upstream review (`question`, optional `criteria`); returns a job. |
-| `deep_literature_search` | Start a hosted deep-search job (`goal`) only after an explicit route and eligible Elicit API account are configured. |
-| `developer_search` | Technical/repository evidence (`query`, optional `repos` and `language`). |
-| `repo_search` | Repositories, code, or issues (`query`, `mode`, optional `language`, `min_stars`). |
-| `get_job` | Poll an owned job (`job_id`, optional `wait_s`); not a search fallback. |
+The public interface is nine workflow tools. Agents choose a workflow and, where relevant, an
+operation or scope; the engine selects the internal capability, saved route, providers and
+accounts. Provider names, accounts and transports are never tool parameters.
 
-Many tools accept `fresh` and `deadline_s`. `fresh=true` bypasses the engine cache; an upstream that cannot guarantee cache bypass can reject it. A `partial` result means at least one routed source failed, was skipped, or timed out; inspect `coverage` before relying on the result. Citation provenance is attribution, not proof of a claim.
+| Tool | Use it for | Key inputs | Internal capability |
+|---|---|---|---|
+| `search` | Default for everyday and current information | `query`, `focus` (`web`/`news`), `domains`, `recency`, `limit` | `web_search`, `news_search` |
+| `read` | Source text of a URL, returned handle, DOI or arXiv ID | `target`, `source_type` (`auto`/`web`/`paper`), `cursor` | `web_read`, `paper_read` |
+| `paper_search` | Academic literature discovery | `query`, `year_from`, `year_to`, `limit` | `paper_search` |
+| `paper_explore` | Known papers: identity, related work, citation network | `operation` (`metadata`/`related`/`citations`), `ids` or `citation`, `relation`, `direction`, `depth` | `paper_metadata`, `paper_related`, `citation_graph` |
+| `verify` | Citation checks, claim evidence, retraction/editorial notices | `operation` (`citation`/`claim`/`editorial`), `citation`, `claim`, `ids` | `citation_verify`, `editorial_check` |
+| `code_search` | Library docs, repositories, code, issues | `query`, `scope` (`docs`/`repositories`/`code`/`issues`), `repos`, `language`, `min_stars` | `developer_search`, `repo_search` |
+| `site_research` | List a site's URLs or start a bounded crawl | `url`, `operation` (`map`/`crawl`), `limit`, `max_depth`, include/exclude paths | `site_map`, `site_crawl` |
+| `deep_research` | Long literature search or systematic review job | `operation` (`literature`/`systematic_review`), `question`, `criteria` | `deep_literature_search`, `systematic_review` |
+| `get_job` | Poll a job started by `site_research` or `deep_research` | `job_id`, `wait_s` | job store |
+
+Search tools return ranked pointers (handle, URL, snippet, provenance), not full text; read the
+important ones. Web and paper search are separate evidence pools. `status=partial` means some
+intended sources failed, were skipped or timed out; check `coverage`. Provenance attributes a
+source and is not a judgment of truth; citation tallies never verify a claim. Long reads are
+paginated with `next_cursor`. `fresh=true` bypasses this server's cache only; upstream services
+may still answer from their own caches.
+
+**Filters.** `search` supports `domains` (Exa, Tavily, Nimble, Firecrawl) and `recency`
+(Nimble, Firecrawl), the filters OmniRoute actually forwards. Sources that cannot apply a
+requested filter are skipped and listed in `coverage` (never returned unfiltered); if no routed
+source can apply it the call fails with `INVALID_INPUT`. Absolute date ranges are not offered.
+Invalid operation/argument combinations also fail before any upstream request.
 
 ## Retrieval semantics
 
@@ -106,7 +113,7 @@ uv run --frozen python scripts/mcp_smoke.py --token-file data/bootstrap.json \
   --tool paper_search --arguments '{"query":"open access research reproducibility","limit":3}'
 ```
 
-A research agent asked “Find recent evidence about reproducibility in open access research” can call `paper_search`, inspect coverage and citations, then call `paper_read` on a returned paper handle. For general web research it can call `web_search` then `web_read`. Provider calls may fail or incur upstream usage according to your configuration.
+A research agent asked “Find recent evidence about reproducibility in open access research” can call `paper_search`, inspect coverage, then `read` a returned paper handle. For general questions it calls `search`, then `read` on the strongest sources. Provider calls may fail or incur upstream usage according to your configuration.
 
 ## Configuration and deployment
 
