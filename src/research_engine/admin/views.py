@@ -19,7 +19,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, RedirectResponse, Response
-from wtforms import PasswordField, SelectField
+from wtforms import Form, PasswordField, SelectField
 from wtforms.validators import Optional
 
 from research_engine.admin.oauth_connect import OAuthConnect
@@ -186,6 +186,26 @@ def _attempt_table(model: RequestRow, attr: str) -> Markup:
     )
 
 
+# The locked SQLAdmin builds model forms on top of ``form_base_class`` and no
+# longer supports ``form_extra_fields``; non-column fields live here instead.
+class ProviderForm(Form):
+    account_selection = SelectField(
+        "Direct account selection",
+        choices=[(mode, mode.replace("_", " ").title()) for mode in ("priority", "round_robin", "quota_aware")],
+        description="Applies to direct accounts only. Bridged accounts are selected upstream.",
+    )
+
+
+class AccountForm(Form):
+    # The locked SQLAdmin omits foreign-key columns from generated forms.
+    provider = SelectField("Provider", choices=[])
+    secret = PasswordField(
+        "New credential", validators=[Optional()],
+        description="API key or a JSON object. Leave blank to keep the stored credential.",
+        render_kw={"autocomplete": "new-password"},
+    )
+
+
 def mount_admin(
     app: Any, settings: Settings, db: Database, secret_store: Any,
     engine: Any = None, oauth_manager: Any = None,
@@ -212,15 +232,8 @@ def mount_admin(
         can_create = can_delete = False
         column_list = [ProviderRow.name, ProviderRow.enabled, ProviderRow.capabilities]
         column_details_list = column_list + [ProviderRow.options]
-        form_columns = [ProviderRow.enabled, ProviderRow.options, "account_selection"]
-        form_extra_fields = {
-            "account_selection": SelectField(
-                "Direct account selection",
-                choices=[(mode, mode.replace("_", " ").title()) for mode in
-                         ("priority", "round_robin", "quota_aware")],
-                description="Applies to direct accounts only. Bridged accounts are selected upstream.",
-            ),
-        }
+        form_columns = [ProviderRow.enabled, ProviderRow.options]
+        form_base_class = ProviderForm
 
         async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
             data = await super().get_form_data_for_edit(obj)
@@ -250,15 +263,24 @@ def mount_admin(
         ]
         form_columns = [
             Account.provider, Account.label, Account.enabled, Account.priority,
-            Account.quota_group, "secret",
+            Account.quota_group,
         ]
-        form_extra_fields = {
-            "secret": PasswordField(
-                "New credential", validators=[Optional()],
-                description="API key or a JSON object. Leave blank to keep the stored credential.",
-                render_kw={"autocomplete": "new-password"},
-            ),
-        }
+        form_base_class = AccountForm
+
+        async def scaffold_form(self, rules: Any = None) -> Any:
+            def provider_names() -> list[str]:
+                with db.session() as session:
+                    return list(session.scalars(select(ProviderRow.name).order_by(ProviderRow.name)))
+
+            form = await super().scaffold_form(rules)
+            names = await anyio.to_thread.run_sync(provider_names)
+            form.provider.kwargs["choices"] = [(name, name) for name in names]
+            return form
+
+        async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+            data = await super().get_form_data_for_edit(obj)
+            data["provider"] = obj.provider
+            return data
 
         async def on_model_change(self, data: dict[str, Any], model: Any, is_created: bool, request: Request) -> None:
             raw = data.pop("secret", "")
@@ -295,12 +317,17 @@ def mount_admin(
         can_delete = False
         column_list = [Routing.capability, Routing.mode, Routing.providers]
         form_columns = column_list
-        form_extra_fields = {
-            "mode": SelectField("Mode", choices=[("fanout", "Fanout"), ("sequential", "Sequential")]),
-        }
+        form_overrides = {"mode": SelectField}
+        form_args = {"mode": {"choices": [("fanout", "Fanout"), ("sequential", "Sequential")]}}
+        # The locked SQLAdmin omits primary keys unless included; capability is the route key.
+        form_include_pk = True
 
         async def on_model_change(self, data: dict[str, Any], model: Any, is_created: bool, request: Request) -> None:
-            capability = data["capability"]
+            capability = data.get("capability") or (None if is_created else model.capability)
+            if not capability:
+                raise ValueError("Choose a capability")
+            if not is_created and capability != model.capability:
+                raise ValueError("A route's capability cannot be renamed")
             providers = data["providers"]
             def check_route() -> None:
                 if engine is None:
