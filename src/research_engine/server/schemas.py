@@ -78,6 +78,7 @@ class Envelope(BaseModel):
 class SearchOutput(Envelope):
     items: list[dict[str, Any]]
     per_seed_coverage: dict[str, list[dict[str, Any]]] | None = None
+    recency: dict[str, Any] | None = None
 
 
 class ReadOutput(Envelope):

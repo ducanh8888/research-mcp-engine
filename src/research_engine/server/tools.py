@@ -11,10 +11,11 @@ from __future__ import annotations
 import json
 import math
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from fastmcp import FastMCP
+from pydantic import Field
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from research_engine.router.execute import ToolError
@@ -112,7 +113,11 @@ def register_tools(engine) -> FastMCP:
         read on important results. domains restricts results to those sites and
         recency to the last day/week/month/year; sources that cannot apply a filter
         are skipped and listed in coverage (status=partial), never returned unfiltered.
-        Absolute date ranges are not supported. fresh=true bypasses this server's
+        With recency, results whose source-reported publication date falls outside the
+        window are removed; each kept item has recency_check verified, unverified (no
+        absolute date was reported, so the upstream filter is unconfirmed) or
+        conflicting, summarised in recency, and any unverified item makes
+        status=partial. Absolute date ranges are not supported. fresh=true bypasses this server's
         cache only. deadline_s is the whole request budget (clamped to 5–50 seconds).
         """
         def plan():
@@ -164,7 +169,10 @@ def register_tools(engine) -> FastMCP:
                             ids: list[str] | None = None, citation: str | None = None,
                             relation: Literal["similar", "citing", "cited"] | None = None,
                             direction: Literal["in", "out", "both"] | None = None,
-                            depth: int | None = None, limit: int | None = None,
+                            depth: int | None = None,
+                            limit: Annotated[int | None, Field(description=(
+                                "operation=related only: maximum related papers (default 8). Rejected for "
+                                "metadata and citations; citation graphs are bounded by depth instead."))] = None,
                             fresh: bool = False, deadline_s: float = DEFAULT_DEADLINE_S) -> CallToolResult:
         """Work with known papers: identity, related work and citation networks.
 
@@ -173,9 +181,10 @@ def register_tools(engine) -> FastMCP:
         identifier, otherwise it stays unknown (see per_id_coverage). operation=related
         needs ids as seeds and relation=similar (default), citing (papers citing each
         seed) or cited (each seed's references); every seed is handled and reported in
-        per_seed_coverage; limit caps results. operation=citations returns a bounded
-        citation graph from ids with direction=in (citing), out (cited) or both
-        (default) and depth 1 (default) or 2; check truncated. Resolve free-text
+        per_seed_coverage; limit caps results and applies to related only.
+        operation=citations returns a bounded citation graph from ids with direction=in
+        (citing), out (cited) or both (default) and depth 1 (default) or 2; it takes no
+        limit (the server bounds graph size; check truncated). Resolve free-text
         citations with metadata first, then pass their identifiers.
         """
         def plan():
@@ -207,9 +216,15 @@ def register_tools(engine) -> FastMCP:
 
         operation=citation checks that citation (text or identifier) matches a real
         record: bibliographic is match, mismatch, conflict (sources disagree) or unknown.
+        Only identifiers, an exact title and a single stated year are compared; a DOI
+        alone never validates contradictory surrounding text.
         operation=claim also needs claim, the exact statement attributed to the cited
-        work, and returns citing passages in claim_evidence. citation_tallies are counts
-        of citing statements, never proof of a claim. operation=editorial needs ids and
+        work. claim_evidence holds unjudged passages labelled by scope:
+        cited_work_abstract (the identified work's own abstract) or citation_context
+        (sentences from other papers citing it). No passage is a support verdict, and
+        an empty list means unknown, not unsupported; read the work for its full text.
+        citation_tallies are counts of citing statements, never proof of a claim.
+        operation=editorial needs ids and
         returns source-attributed notices in checks; no notice means unknown, not clear.
         """
         def plan():

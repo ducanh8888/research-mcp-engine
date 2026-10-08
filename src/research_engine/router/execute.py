@@ -10,6 +10,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from research_engine.cache import Cache
 from research_engine.config import Settings
 from research_engine.merge import merge_hits
+from research_engine.merge.recency import enforce_recency
 from research_engine.merge.canonical import STRONG_IDS, canonical_handle, normalize_url
 from research_engine.providers.base import (
     ASYNC_CAPABILITIES, SEARCH_CAPABILITIES, CallContext, Capability, ErrorKind,
@@ -39,6 +41,11 @@ from research_engine.storage.db import (
 
 NOT_NEEDED = "not needed after a usable source"
 UNSUPPORTED_FILTER = "unsupported filter"
+
+
+def _today() -> date:
+    """Server UTC date for recency windows (patched by deterministic tests)."""
+    return datetime.now(UTC).date()
 
 
 class ToolError(Exception):
@@ -401,10 +408,17 @@ class Engine:
             raise ToolError("NOT_FOUND", "Unknown handle")
         return target, None
 
-    async def _payload(self, cap: Capability, results: list[Result], limit: int = 25) -> dict:
+    async def _payload(self, cap: Capability, results: list[Result], limit: int = 25,
+                       recency: str | None = None) -> dict:
         if cap in SEARCH_CAPABILITIES:
-            merged = await asyncio.to_thread(merge_hits, [hit for result in results for hit in result.hits], limit)
+            # Recency is checked before the output limit so excluded items do not
+            # hide compliant ones further down the fused list.
+            merged = await asyncio.to_thread(merge_hits, [hit for result in results for hit in result.hits],
+                                             None if recency else limit)
             await asyncio.to_thread(self._persist_identities, merged)
+            if recency:
+                items, report = enforce_recency(merged.items, recency, _today())
+                return {"items": items[:limit], "recency": report}
             if cap == Capability.PAPER_RELATED:
                 per_seed: dict[str, list[Any]] = {}
                 for result in results:
@@ -621,7 +635,9 @@ class Engine:
             job = await self.jobs.create(cap, args, chosen.provider, chosen.account_id,
                                          chosen.upstream_ref, client_token_id)
             return {**job.model_dump(), "request_id": request_id, "coverage": coverage}
-        payload = await self._payload(cap, [o.result for o in succeeded], args.get("limit", 8))
+        payload = await self._payload(cap, [o.result for o in succeeded], args.get("limit", 8),
+                                      args.get("recency") if cap in {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}
+                                      else None)
         if cap in SEARCH_CAPABILITIES and len(payload.get("items", [])) > 1:
             ranked, diagnostics = await self._rerank_items(args.get("query", ""), payload["items"], deadline)
             payload["items"] = ranked
@@ -652,7 +668,11 @@ class Engine:
             o.result is None for o, _ in metadata_attempts)
         # A later reader or job provider left unused after a usable result is not missing coverage.
         missing = [entry for entry in coverage["skipped"] if entry["reason"] != NOT_NEEDED]
-        reduced_coverage = pending or metadata_incomplete or bool(coverage["failed"] or missing)
+        # Returned items without verified in-window dates are a stated limitation.
+        recency = payload.get("recency")
+        unverified_recency = bool(recency and (recency["unverified"] or recency["conflicting"]))
+        reduced_coverage = (pending or metadata_incomplete or unverified_recency
+                            or bool(coverage["failed"] or missing))
         envelope = {"status": "partial" if reduced_coverage else "complete", "coverage": coverage,
                     "request_id": request_id, **payload}
         if read and payload.get("document") is not None:

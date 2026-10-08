@@ -119,7 +119,8 @@ def test_rrf_counts_best_rank_once_per_provider_and_ties_are_stable():
     hits = [hit("exa", 3), hit("exa", 2), hit("brave", 1)]
     item = merge_hits(hits).items[0]
     assert item["score"] == pytest.approx(1 / 62 + 1 / 61)
-    assert len(item["providers"]) == 3
+    # A repeated identical sighting is one provenance entry at its best rank.
+    assert [(source["p"], source["rank"]) for source in item["providers"]] == [("brave", 1), ("exa", 2)]
     tied = [hit("exa", url="https://a.org"), hit("brave", url="https://b.org")]
     assert merge_hits(tied).items == merge_hits(reversed(tied)).items
 
