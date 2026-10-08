@@ -34,15 +34,23 @@ from research_engine.storage.db import (
 
 
 class AdminNoStore:
-    """Prevent authenticated admin responses from entering intermediary caches."""
+    """Keep admin responses uncached and generated URLs on the configured public origin."""
 
-    def __init__(self, app: Any):
+    def __init__(self, app: Any, public_base_url: str):
         self.app = app
+        parsed = urlsplit(public_base_url)
+        self.public_host = parsed.netloc
+        self.public_scheme = parsed.scheme
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http" or not scope.get("path", "").startswith("/admin"):
             await self.app(scope, receive, send)
             return
+        host = dict(scope["headers"]).get(b"host", b"").decode("latin-1")
+        if self.public_scheme == "https" and host == self.public_host:
+            # The existing tunnel terminates TLS, but forwards plain HTTP to the
+            # container. Use the configured public origin for SQLAdmin URL generation.
+            scope = {**scope, "scheme": "https"}
 
         async def send_no_store(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start":
@@ -129,7 +137,7 @@ class AdminAuthentication(AuthenticationBackend):
                 same_site="lax", https_only=parsed.scheme == "https", path="/admin",
             ),
             Middleware(AdminCSRF, origins=[origin, *settings.trusted_origins]),
-            Middleware(AdminNoStore),
+            Middleware(AdminNoStore, public_base_url=settings.public_base_url),
         ]
 
     async def login(self, request: Request) -> bool:

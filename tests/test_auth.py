@@ -94,6 +94,8 @@ async def test_matching_origin_allows_mcp_initialize(running_server: Runtime):
 
 async def test_dashboard_login_session_csrf_logout_and_write_only_credentials(running_server: Runtime):
     async with httpx.AsyncClient(base_url=running_server.url, follow_redirects=False) as http:
+        entry = await http.get("/admin")
+        assert entry.status_code == 307 and entry.headers["location"] == "/admin/"
         anonymous = await http.get("/admin/")
         assert anonymous.status_code in {302, 303, 307}
         login = await http.get("/admin/login")

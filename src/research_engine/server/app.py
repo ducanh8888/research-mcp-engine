@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.responses import RedirectResponse
 
 from research_engine.admin.views import mount_admin
 from research_engine.config import Settings, load_config
@@ -31,6 +32,11 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
 
     app = FastAPI(title="Research MCP", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.engine, app.state.mcp = engine, mcp
+
+    @app.get("/admin", include_in_schema=False)
+    async def admin_entry():
+        return RedirectResponse("/admin/", status_code=307,
+                                headers={"Cache-Control": "no-store"})
 
     @app.get("/health")
     async def health():
