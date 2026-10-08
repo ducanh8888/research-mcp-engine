@@ -26,6 +26,7 @@ Registered direct Exa, Tavily, Brave, Serper, Jina, Firecrawl search/fetch and D
 
 - `research-engine init` imports nonempty values in `.env` into encrypted SQLite account records. `import-env` repeats the import after first boot. `OMNI_ROUTE_API_URL` sets the bridge connection's API root; `OMNI_ROUTE_API_KEY` authenticates that connection.
 - OmniRoute chooses its own commodity accounts; the gateway requests an explicit upstream provider ID and checks returned identity. Only the upstream provider counts as evidence.
+- A direct-provider variable may hold several comma-separated keys, for example `CONSENSUS_API_KEY=key1,key2`. Import creates accounts `environment`, `environment-2`, … with ascending priority; removing a key from the list disables its `environment-N` account. `OMNI_ROUTE_API_KEY` is a single connection credential.
 - Direct specialist accounts are managed in `/admin`. Priority, round-robin, and quota-aware selection choose a usable account **within** a provider for authentication/rate/quota availability. They never add an evidence vote.
 - Public providers can be keyless but still have limits or require credentials for particular operations. A skipped or failed provider is visible in `coverage`; it is not an empty successful result.
 

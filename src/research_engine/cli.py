@@ -51,25 +51,48 @@ def _database(settings):
     return db, registry
 
 
+def _environment_keys(value: object, provider: str) -> list[str]:
+    """Direct providers accept several comma-separated keys; the bridge has one."""
+    if not isinstance(value, str):
+        return []
+    parts = [value] if provider == "omniroute" else value.split(",")
+    return list(dict.fromkeys(part.strip() for part in parts if part.strip()))
+
+
 def import_environment(settings, db: Database, registry: dict) -> list[str]:
+    """Import ``.env`` keys as encrypted accounts: ``environment``, ``environment-2`` ...
+
+    Each key becomes one account of the same provider, so account selection
+    (priority, round-robin, quota-aware) and auth/rate/quota failover apply.
+    Accounts never become separate evidence votes. An ``environment-N`` account
+    whose key was removed from the list is disabled rather than deleted.
+    """
     values = {**dotenv_values(settings.encryption_key_file.parent.parent / ".env"), **os.environ}
     store = SecretStore(db, Cipher.from_file(settings.encryption_key_file, db))
     imported = []
     for variable, provider in KEYS.items():
-        key = values.get(variable)
-        if provider not in registry or not isinstance(key, str) or not key.strip():
+        keys = _environment_keys(values.get(variable), provider)
+        if provider not in registry or not keys:
             continue
+        labels = ["environment"] + [f"environment-{index}" for index in range(2, len(keys) + 1)]
+        for position, (label, key) in enumerate(zip(labels, keys)):
+            with db.session() as session:
+                account = session.scalar(select(Account).where(Account.provider == provider,
+                                                               Account.label == label))
+                if account is None:
+                    account = Account(provider=provider, label=label, credential="ok", priority=position)
+                    session.add(account)
+                    session.flush()
+                if account.credential != "disabled":
+                    account.credential = "ok"
+                account_id = account.id
+            store.set(account_id, {"api_key": key})
+            imported.append(provider)
         with db.session() as session:
-            account = session.scalar(select(Account).where(Account.provider == provider,
-                                                           Account.label == "environment"))
-            if account is None:
-                account = Account(provider=provider, label="environment", credential="ok", priority=0)
-                session.add(account)
-                session.flush()
-            account.credential = "ok"
-            account_id = account.id
-        store.set(account_id, {"api_key": key.strip()})
-        imported.append(provider)
+            for account in session.scalars(select(Account).where(
+                    Account.provider == provider, Account.label.like("environment-%"))):
+                if account.label not in labels:
+                    account.enabled = False
     bridge_url = values.get("OMNI_ROUTE_API_URL")
     if isinstance(bridge_url, str) and bridge_url.strip() and "omniroute" in registry:
         with db.session() as session:
