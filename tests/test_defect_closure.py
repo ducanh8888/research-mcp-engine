@@ -298,3 +298,11 @@ async def test_openalex_claim_returns_the_identified_works_abstract_only(monkeyp
     unresolved = await provider.call(Capability.CITATION_VERIFY, {"citation": "MIRAGE paper", "claim": claim}, None)
     assert unresolved.claim_evidence == []
     assert "claim" not in for_provider(Capability.CITATION_VERIFY, {"citation": "x", "claim": claim}, "crossref")
+
+
+def test_youcom_is_a_verified_domain_and_recency_provider():
+    for capability in (Capability.WEB_SEARCH, Capability.NEWS_SEARCH):
+        request = for_provider(capability, {"query": "q", "domains": ["example.org"], "recency": "week"},
+                               "omni:youcom-search")
+        assert request["domains"] == ["example.org"] and request["recency"] == "week"
+    assert parse_published("2026-10-28T00:00:00") == date(2026, 10, 28)

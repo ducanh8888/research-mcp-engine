@@ -26,8 +26,9 @@ YEAR_FILTERS = {
 # OmniRoute forwards these filters only to the providers below (installed handler
 # source at fc5e2bc, re-checked live); it silently ignores them for every other
 # provider, so the engine skips those providers instead of claiming filtered results.
-OMNI_DOMAIN_FILTERS = frozenset({"omni:exa-search", "omni:tavily-search", "omni:nimble-search", "omni:firecrawl"})
-OMNI_RECENCY_FILTERS = frozenset({"omni:nimble-search", "omni:firecrawl"})
+OMNI_DOMAIN_FILTERS = frozenset({"omni:exa-search", "omni:tavily-search", "omni:nimble-search", "omni:firecrawl",
+                                  "omni:youcom-search"})
+OMNI_RECENCY_FILTERS = frozenset({"omni:nimble-search", "omni:firecrawl", "omni:youcom-search"})
 DEVELOPER_KINDS = frozenset({"docs", "issues", "pull_request", "readme"})
 # GitHub developer search returns issues; only Firecrawl's developer index honors a kind.
 DEVELOPER_KIND_PROVIDERS = {"firecrawl"}
