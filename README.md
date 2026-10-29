@@ -43,8 +43,8 @@ Default routes are seeded on first initialization; an operator can edit them in 
 
 | Source | Seeded use | Connection |
 |---|---|---|
-| DuckDuckGo, Exa, Serper, Ollama Search, Tavily, Firecrawl, Nimble | Web search via explicit OmniRoute provider IDs | OmniRoute service key and URL; upstream accounts managed there |
-| Serper, Tavily, Firecrawl, Nimble | News search via OmniRoute | Same connection; provider access varies |
+| DuckDuckGo, Exa, Serper, Ollama Search, Tavily, Firecrawl, Nimble, You.com | Web search via explicit OmniRoute provider IDs | OmniRoute service key and URL; upstream accounts managed there |
+| Serper, Tavily, Firecrawl, Nimble, You.com | News search via OmniRoute | Same connection; provider access varies |
 | Jina Reader, Firecrawl, Tavily, Nimble | Sequential web reading via OmniRoute | Same connection |
 | trafilatura | Local web extraction after configured readers | No provider key |
 | OpenAlex, Crossref, Semantic Scholar, arXiv | Direct academic search, metadata, reading, relations, citations as supported | Public endpoints; optional keys for applicable APIs |
@@ -79,8 +79,8 @@ source and is not a judgment of truth; citation tallies never verify a claim. Lo
 paginated with `next_cursor`. `fresh=true` bypasses this server's cache only; upstream services
 may still answer from their own caches.
 
-**Filters.** `search` supports `domains` (Exa, Tavily, Nimble, Firecrawl) and `recency`
-(Nimble, Firecrawl), the filters OmniRoute actually forwards. Sources that cannot apply a
+**Filters.** `search` supports `domains` (Exa, Tavily, Nimble, Firecrawl, You.com) and `recency`
+(Nimble, Firecrawl, You.com), the filters OmniRoute actually forwards. Sources that cannot apply a
 requested filter are skipped and listed in `coverage` (never returned unfiltered); if no routed
 source can apply it the call fails with `INVALID_INPUT`. With `recency`, the server also checks
 source-reported publication dates: known out-of-window results are removed and each kept item is

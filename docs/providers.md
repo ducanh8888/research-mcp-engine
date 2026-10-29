@@ -4,8 +4,8 @@ A provider is registered in code; a route determines whether it is selected for 
 
 | Provider / transport | Implemented capabilities | Initial route / access |
 |---|---|---|
-| OmniRoute `duckduckgo-free`, `exa-search`, `serper-search`, `ollama-search`, `tavily-search`, `firecrawl`, `nimble-search` | `web_search` | Seeded. One OmniRoute URL/key; account availability upstream. |
-| OmniRoute `serper-search`, `tavily-search`, `firecrawl`, `nimble-search` | `news_search` | Seeded through the same connection. |
+| OmniRoute `duckduckgo-free`, `exa-search`, `serper-search`, `ollama-search`, `tavily-search`, `firecrawl`, `nimble-search`, `youcom-search` | `web_search` | Seeded (`youcom-search` for new installs; an existing deployment adds `omni:youcom-search` to its route in `/admin`, and OmniRoute needs a You.com key). One OmniRoute URL/key; account availability upstream. |
+| OmniRoute `serper-search`, `tavily-search`, `firecrawl`, `nimble-search`, `youcom-search` | `news_search` | Seeded through the same connection. |
 | OmniRoute `jina-reader`, `firecrawl`, `tavily-search`, `nimble-search` | `web_read` | Seeded, tried sequentially for the same URL. |
 | OmniRoute `brave-search`, `jina-search`, `linkup-search`, `anysearch-search` | Search and/or fetch as registered | Implemented bridge mappings, **not seeded**. Enabling requires an eligible upstream and operation check. |
 | trafilatura (local) | `web_read` | Seeded last; no provider credential. |

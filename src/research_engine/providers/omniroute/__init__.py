@@ -33,6 +33,7 @@ PROVIDERS = [
     OmniRouteProvider("omni:jina-search", "jina-search", {Capability.WEB_SEARCH}),
     OmniRouteProvider("omni:linkup-search", "linkup-search", {Capability.WEB_SEARCH}),
     OmniRouteProvider("omni:anysearch-search", "anysearch-search", {Capability.WEB_SEARCH, Capability.WEB_READ}),
+    OmniRouteProvider("omni:youcom-search", "youcom-search", {Capability.WEB_SEARCH, Capability.NEWS_SEARCH}),
     OmniRouteProvider("omni:nimble-search", "nimble-search", {Capability.WEB_SEARCH, Capability.NEWS_SEARCH,
                                                                Capability.WEB_READ}),
 ]
